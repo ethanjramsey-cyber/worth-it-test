@@ -57,6 +57,7 @@ export function buildCardModel({ listing, result, appUrl = APP_URL } = {}) {
     placeholder,
     draft,
     confident: result?.confident !== false,
+    motSummary: listing?.motSummary || result?.motSummary || '',
   };
 }
 
@@ -67,6 +68,7 @@ export function shareText(card, { challengeUrl } = {}) {
       .filter(Boolean)
       .join(', '),
     card.score != null ? `Value Score ${card.score}` : '',
+    card.motSummary || '',
     card.fairLine,
     challengeUrl ? `Challenge a mate: ${challengeUrl}` : '',
     'Estimates, not a valuation.',
@@ -146,6 +148,12 @@ export function drawShareCard(ctx, card, { width, height } = CARD_SIZES.portrait
   ctx.fillStyle = COLOURS.muted;
   ctx.font = `500 36px ${FONT_STACK}`;
   ctx.fillText(meta, cx, tall ? 350 : 290);
+
+  if (card.motSummary) {
+    ctx.fillStyle = COLOURS.muted;
+    ctx.font = `500 28px ${FONT_STACK}`;
+    fitText(ctx, card.motSummary, cx, tall ? 396 : 336, width - pad * 2, 28);
+  }
 
   const scoreY = tall ? 820 : 640;
   ctx.save();

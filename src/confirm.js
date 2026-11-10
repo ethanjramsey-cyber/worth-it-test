@@ -32,6 +32,10 @@ const SOURCE_LABELS = {
   'ai-pasted-text': 'AI read of your pasted text',
   'ai-screenshot': 'AI read of your screenshot',
   'page-text': 'the page’s visible text',
+  'dvla-ves': 'the official DVLA record',
+  'dvsa-mot': 'the official MOT history',
+  'mot-odometer': 'the last MOT mileage',
+  plate: 'the official vehicle record',
 };
 
 export function sourceLabel(source) {
@@ -73,12 +77,13 @@ export function fieldStatuses(input = {}, opts = {}) {
       : (isFilled(value) ? defaultConfidence : 0);
     const missing = !isFilled(value);
     const low = !missing && confidence < LOW_CONFIDENCE;
+    const customLabel = raw && typeof raw === 'object' ? raw.sourceLabel : null;
     return {
       key,
       label,
       value: missing ? null : value,
       source,
-      sourceLabel: sourceLabel(source),
+      sourceLabel: customLabel || sourceLabel(source),
       confidence,
       missing,
       low,
