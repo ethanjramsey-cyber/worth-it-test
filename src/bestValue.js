@@ -18,7 +18,7 @@
  *   fair price first (the most substantial typical example you can afford).
  *   Ties break on the tighter leftover (budget − expected).
  *
- *   These are estimates. Every placeholder model is flagged on the result.
+ *   These are estimates. Every draft or placeholder model is flagged on the result.
  *   An empty set is a valid outcome when nothing in the seed fits.
  */
 
@@ -104,6 +104,7 @@ export function rankBestValue(filters, ctx = {}) {
       leftover,
       range: fairPriceRange(expected),
       placeholder: model.placeholder === true,
+      draft: model.draft === true,
       // "How much car the budget buys" — higher expected (still affordable) ranks first.
       carForBudget: expected,
     });
@@ -122,7 +123,7 @@ export function rankBestValue(filters, ctx = {}) {
 }
 
 export function methodText() {
-  return 'Typical example of each model (usually 3 years / 30,000 miles, or your tighter limits, at about 8,000 miles a year). Dearer-than-budget models are dropped; the rest are ranked by the most car your budget still buys. Estimates only; placeholder models are flagged.';
+  return 'Typical example of each model (usually 3 years / 30,000 miles, or your tighter limits, at about 8,000 miles a year). Dearer-than-budget models are dropped; the rest are ranked by the most car your budget still buys. Estimates only; draft and placeholder models are flagged.';
 }
 
 export function formatBestValueLine(item) {

@@ -190,6 +190,13 @@ export function validateModels(modelsDoc, segmentIds) {
     if (model.ethanChecked === true && isPlaceholder) {
       err(errors, `${p}.ethanChecked`, 'a checked price cannot stay flagged as placeholder');
     }
+    if (model.draft != null && typeof model.draft !== 'boolean') {
+      err(errors, `${p}.draft`, 'must be a boolean when present');
+    }
+    if (model.draft === true) {
+      if (!isPlaceholder) err(errors, `${p}.draft`, 'a draft price must stay flagged as placeholder until Ethan checks it');
+      if (model.ethanChecked === true) err(errors, `${p}.draft`, 'a checked price cannot stay flagged as draft');
+    }
     if (model.baseDate != null && (typeof model.baseDate !== 'string' || !/^\d{4}-\d{2}$/.test(model.baseDate))) {
       err(errors, `${p}.baseDate`, 'must be YYYY-MM when present');
     }

@@ -19,7 +19,8 @@
  *     refPrice: number | null,   // figure to use in expectedPrice (index-adjusted when applied)
  *     basePrice: number | null,  // Ethan's figure at baseDate, before the index
  *     placeholder: boolean,      // true until Ethan has set a price for this model
- *     confident: boolean,        // false for placeholder, missing, or refused data
+ *     draft: boolean,            // true for sourced but unchecked prices
+ *     confident: boolean,        // false for placeholder, draft, missing, or refused data
  *     source: string,            // 'static' today; a live source would use its own id
  *     baseDate: string | null,   // YYYY-MM, when the stored price was set
  *     indexFactor: number,       // 1 when the index is not applied
@@ -43,6 +44,9 @@ export const PRICE_SOURCE = 'static';
 
 export const PLACEHOLDER_CAUTION =
   'Indicative only — this reference price is a placeholder, not a figure Ethan has checked. Do not treat the score as a confident verdict.';
+
+export const DRAFT_CAUTION =
+  "Draft price — this is a sourced estimate awaiting Ethan's check, not a figure he has signed off. Do not treat the score as a confident verdict.";
 
 export const MISSING_PRICE_CAUTION =
   'No checked reference price for this model yet, so it cannot be scored.';
@@ -82,6 +86,11 @@ export function isPlaceholderModel(model) {
   return model.placeholder !== false;
 }
 
+/** Sourced but unchecked draft data — not invented, and not Ethan-signed-off. */
+export function isDraftModel(model) {
+  return !!(model && model.draft === true && model.ethanChecked !== true && isPlaceholderModel(model));
+}
+
 export function getStaticReference(model, { index = null } = {}) {
   const placeholder = isPlaceholderModel(model);
   const basePriceRaw = model ? Number(model.refPrice) : NaN;
@@ -93,18 +102,20 @@ export function getStaticReference(model, { index = null } = {}) {
   const latestMonth = index?.latestMonth || null;
   const indexAvailable = !!(indexValues && latestMonth);
 
+  const draft = isDraftModel(model);
   if (placeholder) {
     return {
       refPrice: basePrice,
       basePrice,
       placeholder: true,
+      draft,
       confident: false,
       source: 'static',
       baseDate,
       indexFactor: 1,
       indexApplied: false,
       freshness: null,
-      caution: hasBase ? PLACEHOLDER_CAUTION : MISSING_PRICE_CAUTION,
+      caution: hasBase ? (draft ? DRAFT_CAUTION : PLACEHOLDER_CAUTION) : MISSING_PRICE_CAUTION,
     };
   }
 
@@ -113,6 +124,7 @@ export function getStaticReference(model, { index = null } = {}) {
       refPrice: null,
       basePrice: null,
       placeholder: false,
+      draft: false,
       confident: false,
       source: 'static',
       baseDate,
@@ -149,6 +161,7 @@ export function getStaticReference(model, { index = null } = {}) {
     refPrice,
     basePrice,
     placeholder: false,
+    draft: false,
     confident: true,
     source: 'static',
     baseDate,
@@ -182,4 +195,9 @@ export function datasetHasPlaceholders(models) {
   const list = Array.isArray(models) ? models : [];
   if (!list.length) return true;
   return list.some((m) => isPlaceholderModel(m));
+}
+
+export function datasetHasDrafts(models) {
+  const list = Array.isArray(models) ? models : [];
+  return list.some((m) => isDraftModel(m));
 }

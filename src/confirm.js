@@ -28,6 +28,10 @@ const SOURCE_LABELS = {
   bookmarklet: 'the bookmarklet on the listing page',
   'url-params': 'the link you opened',
   import: 'the imported listing',
+  ai: 'an AI reading',
+  'ai-pasted-text': 'AI read of your pasted text',
+  'ai-screenshot': 'AI read of your screenshot',
+  'page-text': 'the page’s visible text',
 };
 
 export function sourceLabel(source) {

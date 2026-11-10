@@ -244,7 +244,11 @@ function clone(value) {
 /**
  * Merge validated CSV rows into a models.json document.
  *
- * - Rows with a price: upsert, set refPrice, placeholder:false, ethanChecked:true, baseDate.
+ * - Priced rows with ethan_checked ticked (yes/y/true/1/x): upsert, set refPrice,
+ *   placeholder:false, ethanChecked:true, draft:false, baseDate.
+ * - Priced rows that are not ticked: upsert the figure but keep it as unchecked
+ *   draft data (ethanChecked:false, placeholder:true, draft:true) so the app
+ *   shows a draft note rather than a verified price.
  * - Rows without a price: existing models stay placeholder (structural fields may update;
  *   any existing invented seed price is left as-is and still flagged placeholder).
  *   New unpriced models are not added (no invented prices).
@@ -259,12 +263,13 @@ export function mergeRefPrices(modelsDoc, rows, { baseDate, now = new Date() } =
   const defaultBase = parseYearMonth(baseDate) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const originalIds = new Set((modelsDoc?.models || []).map((m) => m.id));
   const byId = new Map(doc.models.map((m) => [m.id, m]));
-  const summary = { priced: 0, added: 0, updated: 0, unchangedPlaceholder: 0, skippedNewUnpriced: 0 };
+  const summary = { priced: 0, checked: 0, draft: 0, added: 0, updated: 0, unchangedPlaceholder: 0, skippedNewUnpriced: 0 };
 
   for (const row of rows) {
     const existing = byId.get(row.id);
     if (row.hasPrice) {
       const nextBase = row.baseDate || defaultBase;
+      const checked = row.ethanChecked === true;
       const next = existing ? { ...existing } : {
         id: row.id,
         refAge: 3,
@@ -281,9 +286,11 @@ export function mergeRefPrices(modelsDoc, rows, { baseDate, now = new Date() } =
       next.refPrice = row.refPrice;
       next.refAge = 3;
       next.refMiles = 30000;
-      next.placeholder = false;
-      next.ethanChecked = true;
+      next.placeholder = !checked;
+      next.ethanChecked = checked;
+      next.draft = !checked;
       next.baseDate = nextBase;
+      if (checked) delete next.draft;
       if (!existing) doc.models.push(next);
       else {
         const idx = doc.models.findIndex((m) => m.id === row.id);
@@ -291,6 +298,8 @@ export function mergeRefPrices(modelsDoc, rows, { baseDate, now = new Date() } =
       }
       byId.set(row.id, next);
       summary.priced += 1;
+      if (checked) summary.checked += 1;
+      else summary.draft += 1;
       if (originalIds.has(row.id)) summary.updated += 1;
       else summary.added += 1;
     } else if (existing) {
@@ -305,6 +314,7 @@ export function mergeRefPrices(modelsDoc, rows, { baseDate, now = new Date() } =
       if (row.engines.length) existing.engines = row.engines;
       existing.placeholder = true;
       existing.ethanChecked = false;
+      delete existing.draft;
       delete existing.baseDate;
       summary.unchangedPlaceholder += 1;
     } else {
@@ -314,11 +324,21 @@ export function mergeRefPrices(modelsDoc, rows, { baseDate, now = new Date() } =
 
   const anyPlaceholder = doc.models.some((m) => m.placeholder !== false);
   const anyChecked = doc.models.some((m) => m.placeholder === false && m.ethanChecked === true);
+  const anyDraft = doc.models.some((m) => m.draft === true);
+  const anyInvented = doc.models.some((m) => m.placeholder !== false && m.draft !== true);
   doc.placeholder = anyPlaceholder;
-  if (anyChecked && anyPlaceholder) {
-    doc.note = 'Mixed seed — some refPrice values were set by Ethan from his trade knowledge; others are still placeholder invented figures, not real market prices. Do not treat placeholder rows as a buying guide.';
-  } else if (anyChecked && !anyPlaceholder) {
+  if (anyChecked && !anyPlaceholder) {
     doc.note = 'Reference prices set by Ethan from his trade knowledge (typical retail, 3 years / 30,000 miles). Moved month-to-month with the ONS CPIH second-hand cars index. Not a live valuation.';
+  } else if (anyDraft && anyChecked) {
+    doc.note = anyInvented
+      ? 'Mixed seed — some refPrice values were set by Ethan from his trade knowledge; others are unchecked draft estimates or leftover placeholder invented figures, not signed-off market prices. Do not treat draft or placeholder rows as a buying guide.'
+      : 'Mixed seed — some refPrice values were set by Ethan from his trade knowledge; others are unchecked draft estimates, not yet signed off. Do not treat draft rows as a buying guide.';
+  } else if (anyDraft && !anyChecked) {
+    doc.note = anyInvented
+      ? "DRAFT seed — some refPrice values are sourced estimates awaiting Ethan's check; others are still placeholder invented figures. Neither is a signed-off valuation. Do not treat them as a buying guide."
+      : "DRAFT seed — refPrice values are sourced estimates awaiting Ethan's check. They are not Ethan-checked trade prices and must not be presented as a confident valuation.";
+  } else if (anyChecked && anyPlaceholder) {
+    doc.note = 'Mixed seed — some refPrice values were set by Ethan from his trade knowledge; others are still placeholder invented figures, not real market prices. Do not treat placeholder rows as a buying guide.';
   } else {
     doc.note = 'PLACEHOLDER seed — all refPrice values are invented round numbers in GBP, not real UK market prices. Do not use for a real buying decision. Ethan still needs to sanity-check every row. engines/gearboxes are suggestion lists only, also placeholder.';
   }

@@ -35,7 +35,8 @@ export function buildCardModel({ listing, result, appUrl = APP_URL } = {}) {
   const fairLine = result?.expected
     ? `Fair price ${formatGbp(result.expected)}`
     : (result?.range ? `Fair price ${formatFairRange(result.range)}` : (result?.rangeText ? `Fair price ${result.rangeText}` : ''));
-  const placeholder = listing?.model?.placeholder === true || result?.placeholder === true;
+  const draft = listing?.model?.draft === true || result?.draft === true;
+  const placeholder = !draft && (listing?.model?.placeholder === true || result?.placeholder === true);
   const rotating = result?.verdict?.taglines?.[0] || '';
   const tagline = result?.tagline || rotating || (result?.confident === false ? 'Indicative only' : '');
   return {
@@ -54,6 +55,7 @@ export function buildCardModel({ listing, result, appUrl = APP_URL } = {}) {
     fairLine,
     footerUrl: footerUrl(appUrl),
     placeholder,
+    draft,
     confident: result?.confident !== false,
   };
 }
@@ -68,7 +70,9 @@ export function shareText(card, { challengeUrl } = {}) {
     card.fairLine,
     challengeUrl ? `Challenge a mate: ${challengeUrl}` : '',
     'Estimates, not a valuation.',
-    card.placeholder ? 'Placeholder data — not a real market valuation.' : '',
+    card.draft
+      ? "Draft data — sourced estimate awaiting Ethan's check, not a signed-off valuation."
+      : (card.placeholder ? 'Placeholder data — not a real market valuation.' : ''),
   ].filter(Boolean);
   return lines.join('\n');
 }
@@ -173,7 +177,11 @@ export function drawShareCard(ctx, card, { width, height } = CARD_SIZES.portrait
   ctx.font = `500 28px ${FONT_STACK}`;
   ctx.fillText('Estimate, not a valuation.', cx, footerY + 52);
 
-  if (card.placeholder) {
+  if (card.draft) {
+    ctx.fillStyle = '#ffd789';
+    ctx.font = `600 26px ${FONT_STACK}`;
+    wrapText(ctx, "Draft data — awaiting Ethan's check, not a signed-off valuation.", cx, footerY + 108, width - pad * 2, 34);
+  } else if (card.placeholder) {
     ctx.fillStyle = '#ffd789';
     ctx.font = `600 26px ${FONT_STACK}`;
     wrapText(ctx, 'Placeholder data — invented numbers, not a real market valuation.', cx, footerY + 108, width - pad * 2, 34);
