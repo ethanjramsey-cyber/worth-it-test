@@ -1,0 +1,299 @@
+{
+  "placeholder": true,
+  "note": "PLACEHOLDER seed \u2014 all refPrice values are invented round numbers in GBP, not real UK market prices. Do not use for a real buying decision. Ethan still needs to sanity-check every row. engines/gearboxes are suggestion lists only, also placeholder.",
+  "refAge": 3,
+  "refMiles": 30000,
+  "models": [
+    {
+      "id": "ford-fiesta",
+      "make": "Ford",
+      "model": "Fiesta",
+      "segment": "supermini",
+      "bodyType": "hatchback",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.0 EcoBoost",
+        "1.1",
+        "1.5 TDCi"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 8000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "supermini",
+      "placeholder": true
+    },
+    {
+      "id": "vauxhall-corsa",
+      "make": "Vauxhall",
+      "model": "Corsa",
+      "segment": "supermini",
+      "bodyType": "hatchback",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.2",
+        "1.4"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 7500,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "supermini",
+      "placeholder": true
+    },
+    {
+      "id": "volkswagen-golf",
+      "make": "Volkswagen",
+      "model": "Golf",
+      "segment": "hatch",
+      "bodyType": "hatchback",
+      "fuels": [
+        "petrol",
+        "diesel",
+        "hybrid"
+      ],
+      "engines": [
+        "1.0 TSI",
+        "1.5 TSI",
+        "2.0 TDI"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 14000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "hatch",
+      "placeholder": true
+    },
+    {
+      "id": "ford-focus",
+      "make": "Ford",
+      "model": "Focus",
+      "segment": "hatch",
+      "bodyType": "hatchback",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.0 EcoBoost",
+        "1.5 EcoBoost",
+        "1.5 TDCi"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 12000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "hatch",
+      "placeholder": true
+    },
+    {
+      "id": "toyota-corolla",
+      "make": "Toyota",
+      "model": "Corolla",
+      "segment": "family",
+      "bodyType": "hatchback",
+      "fuels": [
+        "hybrid",
+        "petrol"
+      ],
+      "engines": [
+        "1.8 Hybrid",
+        "2.0 Hybrid"
+      ],
+      "gearboxes": [
+        "auto",
+        "manual"
+      ],
+      "refPrice": 16000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "family",
+      "placeholder": true
+    },
+    {
+      "id": "skoda-octavia",
+      "make": "Skoda",
+      "model": "Octavia",
+      "segment": "family",
+      "bodyType": "hatchback",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.5 TSI",
+        "2.0 TDI"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 13000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "family",
+      "placeholder": true
+    },
+    {
+      "id": "skoda-octavia-estate",
+      "make": "Skoda",
+      "model": "Octavia Estate",
+      "segment": "estate",
+      "bodyType": "estate",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.5 TSI",
+        "2.0 TDI"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 13500,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "estate",
+      "placeholder": true
+    },
+    {
+      "id": "nissan-qashqai",
+      "make": "Nissan",
+      "model": "Qashqai",
+      "segment": "suv",
+      "bodyType": "suv",
+      "fuels": [
+        "petrol",
+        "diesel",
+        "hybrid"
+      ],
+      "engines": [
+        "1.3 DIG-T",
+        "1.5 dCi"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 15000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "suv",
+      "placeholder": true
+    },
+    {
+      "id": "volkswagen-tiguan",
+      "make": "Volkswagen",
+      "model": "Tiguan",
+      "segment": "suv",
+      "bodyType": "suv",
+      "fuels": [
+        "petrol",
+        "diesel"
+      ],
+      "engines": [
+        "1.5 TSI",
+        "2.0 TDI"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 18000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "suv",
+      "placeholder": true
+    },
+    {
+      "id": "bmw-3-series",
+      "make": "BMW",
+      "model": "3 Series",
+      "segment": "exec",
+      "bodyType": "saloon",
+      "fuels": [
+        "petrol",
+        "diesel",
+        "hybrid"
+      ],
+      "engines": [
+        "2.0",
+        "3.0"
+      ],
+      "gearboxes": [
+        "auto",
+        "manual"
+      ],
+      "refPrice": 18000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "exec",
+      "placeholder": true
+    },
+    {
+      "id": "mazda-mx-5",
+      "make": "Mazda",
+      "model": "MX-5",
+      "segment": "sports",
+      "bodyType": "convertible",
+      "fuels": [
+        "petrol"
+      ],
+      "engines": [
+        "1.5",
+        "2.0"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 14000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "sports",
+      "placeholder": true
+    },
+    {
+      "id": "ford-transit-custom",
+      "make": "Ford",
+      "model": "Transit Custom",
+      "segment": "van",
+      "bodyType": "van",
+      "fuels": [
+        "diesel"
+      ],
+      "engines": [
+        "2.0 TDCi"
+      ],
+      "gearboxes": [
+        "manual",
+        "auto"
+      ],
+      "refPrice": 16000,
+      "refAge": 3,
+      "refMiles": 30000,
+      "curveId": "van",
+      "placeholder": true
+    }
+  ]
+}

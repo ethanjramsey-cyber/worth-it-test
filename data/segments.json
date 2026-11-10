@@ -1,0 +1,88 @@
+{
+  "placeholder": true,
+  "note": "PLACEHOLDER depreciation curves — invented round parameters, not calibrated to the UK market. Do not treat as real. Ethan still needs to sanity-check them. annualDecay is the yearly price factor from the 3-year reference; per10kMilesAdj is the adjustment per 10,000 miles from the 30,000-mile reference. Floors and ceilings stop extreme ages or mileages going nonsensical.",
+  "refAge": 3,
+  "refMiles": 30000,
+  "segments": [
+    {
+      "id": "supermini",
+      "label": "Supermini",
+      "annualDecay": 0.14,
+      "per10kMilesAdj": -0.045,
+      "ageFloor": 0.30,
+      "milesFloor": 0.45,
+      "ageCeiling": 1.45,
+      "milesCeiling": 1.20
+    },
+    {
+      "id": "hatch",
+      "label": "Hatch",
+      "annualDecay": 0.12,
+      "per10kMilesAdj": -0.04,
+      "ageFloor": 0.32,
+      "milesFloor": 0.48,
+      "ageCeiling": 1.40,
+      "milesCeiling": 1.20
+    },
+    {
+      "id": "family",
+      "label": "Family",
+      "annualDecay": 0.11,
+      "per10kMilesAdj": -0.035,
+      "ageFloor": 0.34,
+      "milesFloor": 0.50,
+      "ageCeiling": 1.38,
+      "milesCeiling": 1.18
+    },
+    {
+      "id": "estate",
+      "label": "Estate",
+      "annualDecay": 0.11,
+      "per10kMilesAdj": -0.035,
+      "ageFloor": 0.34,
+      "milesFloor": 0.50,
+      "ageCeiling": 1.38,
+      "milesCeiling": 1.18
+    },
+    {
+      "id": "suv",
+      "label": "SUV",
+      "annualDecay": 0.10,
+      "per10kMilesAdj": -0.035,
+      "ageFloor": 0.36,
+      "milesFloor": 0.50,
+      "ageCeiling": 1.36,
+      "milesCeiling": 1.18
+    },
+    {
+      "id": "exec",
+      "label": "Executive",
+      "annualDecay": 0.13,
+      "per10kMilesAdj": -0.03,
+      "ageFloor": 0.28,
+      "milesFloor": 0.50,
+      "ageCeiling": 1.42,
+      "milesCeiling": 1.16
+    },
+    {
+      "id": "sports",
+      "label": "Sports",
+      "annualDecay": 0.11,
+      "per10kMilesAdj": -0.025,
+      "ageFloor": 0.35,
+      "milesFloor": 0.55,
+      "ageCeiling": 1.35,
+      "milesCeiling": 1.22
+    },
+    {
+      "id": "van",
+      "label": "Van",
+      "annualDecay": 0.09,
+      "per10kMilesAdj": -0.055,
+      "ageFloor": 0.32,
+      "milesFloor": 0.40,
+      "ageCeiling": 1.30,
+      "milesCeiling": 1.15
+    }
+  ]
+}

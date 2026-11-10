@@ -1,0 +1,195 @@
+[
+  {
+    "id": "G01",
+    "label": "generic",
+    "text": "Can I see the V5C log book? Does the name and address match yours, and do the VIN and engine number match the car?",
+    "why": "The V5C shows the registered keeper. It's not proof of ownership, but mismatches are a warning sign.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/vehicle-log-book",
+    "sources": [
+      "https://www.gov.uk/vehicle-log-book",
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G02",
+    "label": "generic",
+    "text": "Has it had a history check for outstanding finance, theft or a write-off (insurance category)? Can I run one?",
+    "why": "A car with outstanding finance can be repossessed from the new owner. History checks also show write-offs and theft markers.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/vehicle-check",
+    "sources": [
+      "https://www.theaa.com/vehicle-check",
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G03",
+    "label": "generic",
+    "text": "Can I look up the MOT history? Have the advisories been fixed, and does the mileage go up steadily?",
+    "why": "GOV.UK's free MOT history shows past fails, advisories and recorded mileage, which helps spot clocking or recurring faults.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/check-mot-history",
+    "sources": [
+      "https://www.gov.uk/check-mot-history",
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G04",
+    "label": "generic",
+    "text": "Is there a full service history with stamps or invoices? When and at what mileage was it last serviced?",
+    "why": "Service history shows whether the car has been maintained as the manufacturer requires.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G05",
+    "label": "generic",
+    "text": "How many previous owners has it had, and how long have you owned it?",
+    "why": "The V5C and history checks show keeper changes. A short ownership period is worth asking about.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/vehicle-log-book",
+    "sources": [
+      "https://www.gov.uk/vehicle-log-book",
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G06",
+    "label": "generic",
+    "text": "Are there any outstanding safety recalls on this car? Can I check the registration on GOV.UK?",
+    "why": "GOV.UK has a free recall checker by make, model and VIN, and recall work is free at a dealer.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/check-vehicle-recall",
+    "sources": [
+      "https://www.gov.uk/check-vehicle-recall"
+    ]
+  },
+  {
+    "id": "G07",
+    "label": "generic",
+    "text": "Has it ever had accident damage, paint or bodywork repairs, or any modifications?",
+    "why": "Undeclared repairs and modifications affect value and insurance. Check panel gaps and paint match.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G08",
+    "label": "generic",
+    "text": "Does it come with two keys and the locking wheel nut key?",
+    "why": "Missing keys are expensive to replace, and only one key can be a sign of a problem.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G09",
+    "label": "generic",
+    "text": "Is any manufacturer or dealer warranty left, and does it transfer to me?",
+    "why": "Warranty left can cover costly repairs, but check it transfers.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G10",
+    "label": "generic",
+    "text": "When does the MOT run out?",
+    "why": "A car with a short MOT may need work soon. Check the date on GOV.UK.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/check-mot-history",
+    "sources": [
+      "https://www.gov.uk/check-mot-history"
+    ]
+  },
+  {
+    "id": "G11",
+    "label": "generic",
+    "text": "Is it ULEZ / Clean Air Zone compliant? Can I check the reg on TfL's checker?",
+    "why": "Non-compliant cars face daily charges in London's ULEZ and some other UK Clean Air Zones.",
+    "confidence": "verified",
+    "source": "https://tfl.gov.uk/modes/driving/check-your-vehicle/",
+    "sources": [
+      "https://tfl.gov.uk/modes/driving/check-your-vehicle/",
+      "https://www.gov.uk/clean-air-zones"
+    ]
+  },
+  {
+    "id": "G12",
+    "label": "generic",
+    "text": "How much tread is left on the tyres, and do they all match?",
+    "why": "The legal minimum for cars is 1.6mm across the central three-quarters of the tread.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/guidance/the-highway-code/annex-6-vehicle-maintenance-safety-and-security",
+    "sources": [
+      "https://www.gov.uk/guidance/the-highway-code/annex-6-vehicle-maintenance-safety-and-security",
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G13",
+    "label": "generic",
+    "text": "When were the brake discs and pads last replaced? Any noises or pulling under braking?",
+    "why": "Brakes are a safety-critical wear item and a common MOT failure point.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G14",
+    "label": "generic",
+    "text": "Are any warning lights on the dashboard, and do all the electrics (windows, air con, lights) work?",
+    "why": "Warning lights and electrical faults can be costly to diagnose and fix.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G15",
+    "label": "generic",
+    "text": "Is it currently taxed?",
+    "why": "Tax doesn't transfer to a new keeper, so you need to tax it before driving away. Check its status on GOV.UK.",
+    "confidence": "verified",
+    "source": "https://www.gov.uk/check-vehicle-tax",
+    "sources": [
+      "https://www.gov.uk/check-vehicle-tax"
+    ]
+  },
+  {
+    "id": "G16",
+    "label": "generic",
+    "text": "Does this engine have a timing belt or a chain? If it's a belt, when was it last changed and can I see the invoice?",
+    "why": "A belt that snaps can cause major engine damage, so ask for proof of replacement.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  },
+  {
+    "id": "G17",
+    "label": "generic",
+    "text": "Can I start it from cold and take it for a test drive (on insurance that covers me)?",
+    "why": "A cold start shows up rattles, smoke and starting problems. A test drive checks the clutch, gearbox, steering and brakes.",
+    "confidence": "verified",
+    "source": "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf",
+    "sources": [
+      "https://www.theaa.com/cars/pdf/aa_buyers_checklist.pdf"
+    ]
+  }
+]
