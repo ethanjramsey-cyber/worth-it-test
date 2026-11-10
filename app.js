@@ -1,10 +1,13 @@
 import { APP_URL, WORKER_URL, EXTRACT_PATH } from './src/config.js';
 import { checkListing, formatGbp, formatMiles, CONFIG } from './src/score.js';
-import { parseListingDetails, matchModel, normaliseFuel, normaliseGearbox } from './src/parse.js';
+import { datasetFreshness, datasetHasPlaceholders, isPlaceholderModel } from './src/priceSource.js';
+import { buildCardModel, shareText, challengeLinkFor, renderShareCardPng, renderBothCards, shareOrDownload, downloadBlob, CARD_SIZES } from './src/shareCard.js';
+import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.js';
+import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
 import { parseChallengeParams, buildChallengeUrl, challengeUrlForDisplay } from './src/url.js';
 import { buildConfirmState } from './src/confirm.js';
 import { initAnalytics, getRef, track } from './src/analytics.js';
-import { garageQuestions, formatQuestionsText, REVIEW_BADGE } from './src/questions.js';
+import { garageQuestions, formatQuestionsText, REVIEW_BADGE, loadGenericQuestions } from './src/questions.js';
 import { loadKb } from './src/kb.js';
 
 const NOW = new Date();
@@ -33,12 +36,31 @@ const els = {
   delta: $('result-delta'),
   resultCar: $('result-car'),
   shareBtn: $('share-btn'),
+  downloadCardBtn: $('download-card-btn'),
   challengeBtn: $('challenge-btn'),
   challengeStatus: $('challenge-status'),
+  bestForm: $('best-form'),
+  bestBudget: $('best-budget'),
+  bestBody: $('best-body'),
+  bestFuel: $('best-fuel'),
+  bestAge: $('best-age'),
+  bestMiles: $('best-miles'),
+  bestResults: $('best-results'),
+  bestEmpty: $('best-empty'),
+  bestMethod: $('best-method'),
+  installBanner: $('install-banner'),
+  installText: $('install-text'),
+  installBtn: $('install-btn'),
+  installDismiss: $('install-dismiss'),
   questionsLabel: $('questions-label'),
   questionsList: $('questions-list'),
   copyQuestions: $('copy-questions'),
   shareQuestions: $('share-questions'),
+  dataBanner: $('data-banner'),
+  dataFreshness: $('data-freshness'),
+  disclaimer: $('disclaimer'),
+  resultCaution: $('result-caution'),
+  resultScoreCaption: $('result-score-caption'),
   urlImport: $('url-import'),
   listingUrl: $('listing-url'),
   fetchUrlBtn: $('fetch-url-btn'),
@@ -52,10 +74,16 @@ const els = {
 
 let models = [];
 let segmentsById = new Map();
+let priceIndex = null;
 let kb = { entries: [] };
+let genericQuestions = [];
 let selectedModel = null;
 let lastQuestions = null;
 let lastListing = null;
+let lastResult = null;
+let deferredInstall = null;
+const CHECKS_KEY = 'worthit-check-count';
+const INSTALL_DISMISS_KEY = 'worthit-install-dismissed';
 const params = parseChallengeParams(window.location);
 const reviewMode = new URLSearchParams(window.location.search).get('review') === '1';
 
@@ -96,11 +124,13 @@ function selectModel(model, { keepSearch = false } = {}) {
     if (!keepSearch) els.modelSearch.value = `${model.make} ${model.model}`;
     els.modelChosen.hidden = false;
     els.modelChosen.textContent = `${model.make} ${model.model}`;
+    els.modelChosen.classList.toggle('is-placeholder', isPlaceholderModel(model));
     fuelOptionsFor(model);
     engineOptionsFor(model);
   } else {
     els.modelChosen.hidden = true;
     els.modelChosen.textContent = '';
+    els.modelChosen.classList.remove('is-placeholder');
     fuelOptionsFor(null);
     engineOptionsFor(null);
   }
@@ -126,7 +156,9 @@ function renderTypeahead(query) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.role = 'option';
-    btn.textContent = `${m.make} ${m.model}`;
+    btn.textContent = isPlaceholderModel(m)
+      ? `${m.make} ${m.model} (placeholder price)`
+      : `${m.make} ${m.model}`;
     btn.addEventListener('click', () => selectModel(m));
     li.append(btn);
     els.modelResults.append(li);
@@ -226,6 +258,23 @@ function hideConfirm() {
 }
 
 function applyParsedText(text) {
+  const pasteStatus = $('paste-status');
+  const trimmed = String(text || '').trim();
+  const isLink = /^https?:\/\/\S+$/i.test(trimmed);
+  if (isLink && !WORKER_URL) {
+    // Link-only paste: we can't open the page from the browser, so read what the link itself says.
+    let slug = '';
+    try { slug = decodeURIComponent(new URL(trimmed).pathname).replace(/[-_/+]+/g, ' '); } catch { /* ignore */ }
+    const fromSlug = slug ? parseListingDetails(slug, NOW) : {};
+    const found = fromSlug.make || fromSlug.model || fromSlug.year;
+    showStatus(pasteStatus, found
+      ? "We can't open listing links yet, so we only read the link's own words. Check the boxes, or paste the listing text for better results."
+      : "We can't open listing links yet, and this link doesn't say what the car is. Copy the listing's title, price and mileage and paste that text here instead.", found ? 'ok' : 'err');
+    if (!found) return;
+    text = slug;
+  } else {
+    showStatus(pasteStatus, '', '');
+  }
   const parsed = parseListingDetails(text, NOW);
   if (parsed.year && !els.year.value) els.year.value = parsed.year;
   if (parsed.mileage != null && !els.mileage.value) els.mileage.value = parsed.mileage;
@@ -236,13 +285,22 @@ function applyParsedText(text) {
   }
   if (parsed.gearbox && !els.gearbox.value) els.gearbox.value = parsed.gearbox;
   if (parsed.engine && !els.engine.value) els.engine.value = parsed.engine.text;
+  let maybe = selectedModel;
   if (!selectedModel) {
-    const maybe = matchModelFromText(text, { ...parsed, make: parsed.make, model: parsed.model });
+    maybe = matchModelFromText(text, { ...parsed, make: parsed.make, model: parsed.model });
     if (maybe) selectModel(maybe);
     else if (parsed.make || parsed.model) {
       els.modelSearch.value = [parsed.make, parsed.model].filter(Boolean).join(' ');
     }
   }
+  const unmatched = unmatchedModelMessage(parsed, maybe);
+  if (unmatched) {
+    const prefix = (isLink && !WORKER_URL)
+      ? "We can't open listing links yet, so we only read the link's own words. "
+      : '';
+    showStatus(pasteStatus, prefix + unmatched, 'err');
+  }
+  // Prefill whatever was found even when mileage or price is missing.
   const any = parsed.year || parsed.mileage != null || parsed.price != null || parsed.fuel || parsed.gearbox || parsed.engine || parsed.make || parsed.model;
   if (any) {
     renderConfirm({
@@ -340,9 +398,15 @@ function runCheck(input) {
   }
   setFormError('');
   const curve = segmentsById.get(input.model.curveId);
-  const result = checkListing({ ...input, now: NOW, curve });
+  const result = checkListing({ ...input, now: NOW, curve, index: priceIndex });
   if (!result) {
     setFormError("Couldn't score that one. Check the details.");
+    els.result.hidden = true;
+    return;
+  }
+  if (result.expected == null || result.score == null) {
+    setFormError(result.caution || "Couldn't score that one. No checked reference price for this model yet.");
+    els.result.hidden = true;
     return;
   }
   renderResult(input, result);
@@ -350,12 +414,24 @@ function runCheck(input) {
 }
 
 function renderResult(input, result) {
-  const tone = result.verdict.tone || 'neutral';
+  const tone = result.confident ? (result.verdict.tone || 'neutral') : 'neutral';
   els.result.hidden = false;
-  els.result.className = `result tone-${tone}`;
-  els.tagline.textContent = result.tagline;
+  els.result.className = `result tone-${tone}${result.confident ? '' : ' is-placeholder'}`;
+  els.tagline.textContent = result.confident ? result.tagline : 'Indicative only';
   els.verdict.textContent = result.verdict.label;
   els.score.textContent = String(Math.round(result.score));
+  if (els.resultScoreCaption) {
+    els.resultScoreCaption.textContent = result.confident ? 'Value Score' : 'Indicative score — not a confident verdict';
+  }
+  if (els.resultCaution) {
+    if (result.caution) {
+      els.resultCaution.hidden = false;
+      els.resultCaution.textContent = result.caution;
+    } else {
+      els.resultCaution.hidden = true;
+      els.resultCaution.textContent = '';
+    }
+  }
   els.range.textContent = `Fair price ${result.rangeText}`;
   els.delta.textContent = `This one is ${result.deltaText}.`;
   const bits = [
@@ -383,10 +459,17 @@ function renderResult(input, result) {
       score: result.score,
       verdict: result.verdict,
     },
-    { kb, now: NOW, review: reviewMode },
+    { kb, generic: genericQuestions, now: NOW, review: reviewMode },
   );
   lastQuestions = q;
   lastListing = input;
+  lastResult = result;
+  if (els.shareBtn) {
+    els.shareBtn.disabled = false;
+    els.shareBtn.hidden = false;
+  }
+  if (els.downloadCardBtn) els.downloadCardBtn.hidden = false;
+  recordCompletedCheck();
   els.questionsLabel.textContent = q.mode === 'generic' ? q.label : '';
   els.questionsList.innerHTML = '';
   for (const item of q.questions) {
@@ -560,21 +643,58 @@ els.confirmCancel.addEventListener('click', () => {
   showStatus(els.urlStatus, 'No problem — edit the boxes or paste the listing text instead.', '');
 });
 
+function applyDataLabels(modelList, index) {
+  const hasPlaceholders = datasetHasPlaceholders(modelList);
+  const freshness = datasetFreshness(modelList, index);
+  if (els.dataBanner) {
+    if (hasPlaceholders) {
+      const all = modelList.length && modelList.every((m) => isPlaceholderModel(m));
+      els.dataBanner.hidden = false;
+      els.dataBanner.textContent = all
+        ? 'Placeholder prices — invented round numbers, not real market data. Ethan still needs to sanity-check these.'
+        : 'Some models still have placeholder prices. A placeholder score is indicative only, not a confident verdict.';
+    } else {
+      els.dataBanner.hidden = true;
+    }
+  }
+  if (els.dataFreshness) {
+    if (freshness) {
+      els.dataFreshness.hidden = false;
+      els.dataFreshness.textContent = freshness;
+    } else {
+      els.dataFreshness.hidden = true;
+      els.dataFreshness.textContent = '';
+    }
+  }
+  if (els.disclaimer) {
+    els.disclaimer.textContent = hasPlaceholders
+      ? 'Estimates, not a valuation. Figures come from a placeholder dataset until Ethan reviews them.'
+      : 'Estimates, not a valuation. Prices were set by Ethan and moved with the official ONS used-car index.';
+  }
+}
+
 async function boot() {
   try {
-    const [modelsDoc, segmentsDoc, kbDoc] = await Promise.all([
+    const [modelsDoc, segmentsDoc, kbDoc, indexDoc, genericDoc] = await Promise.all([
       fetch('./data/models.json').then((r) => r.json()),
       fetch('./data/segments.json').then((r) => r.json()),
       fetch('./data/garage-kb.json').then((r) => r.json()).catch(() => ({ entries: [] })),
+      fetch('./data/index.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('./data/garage-generic-questions.json').then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     models = modelsDoc.models || [];
     segmentsById = new Map((segmentsDoc.segments || []).map((s) => [s.id, s]));
+    priceIndex = indexDoc;
     kb = loadKb(kbDoc);
+    genericQuestions = loadGenericQuestions(genericDoc);
+    applyDataLabels(models, priceIndex);
+    if (els.bestMethod) els.bestMethod.textContent = methodText();
     fuelOptionsFor(null);
     prefillFromParams(params);
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./service-worker.js').catch(() => {});
     }
+    setupInstallPrompt();
   } catch (err) {
     setFormError("Couldn't load the car data. Try a refresh.");
     console.error(err);
@@ -583,8 +703,183 @@ async function boot() {
 
 boot();
 
+async function currentCardAndPng(size = CARD_SIZES.portrait) {
+  if (!lastListing || !lastResult) return null;
+  const card = buildCardModel({ listing: lastListing, result: lastResult, appUrl: APP_URL });
+  const rendered = await renderShareCardPng(card, size);
+  return { card, ...rendered };
+}
+
+function currentShareCopy() {
+  if (!lastListing || !lastResult) return { text: '', url: '', card: null };
+  const card = buildCardModel({ listing: lastListing, result: lastResult, appUrl: APP_URL });
+  const url = challengeLinkFor(lastListing, { appUrl: APP_URL });
+  return { text: shareText(card, { challengeUrl: url }), url, card };
+}
+
+async function onShareCard() {
+  const pack = currentShareCopy();
+  if (!pack.card) return;
+  showStatus(els.challengeStatus, 'Preparing your card…', '');
+  try {
+    const rendered = await renderShareCardPng(pack.card, CARD_SIZES.portrait);
+    const filename = `worth-it-${pack.card.verdictId || 'score'}.png`;
+    const mode = await shareOrDownload({
+      blob: rendered.blob,
+      filename,
+      title: `${pack.card.appName} — ${pack.card.verdict}`,
+      text: pack.text,
+      url: pack.url.startsWith('http') ? pack.url : undefined,
+    });
+    showStatus(els.challengeStatus, mode === 'downloaded' ? 'Card saved as a PNG.' : 'Shared — they can enter their own price.', 'ok');
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      showStatus(els.challengeStatus, '', '');
+      return;
+    }
+    try {
+      const rendered = await renderShareCardPng(pack.card, CARD_SIZES.portrait);
+      downloadBlob(rendered.blob, `worth-it-${pack.card.verdictId || 'score'}.png`);
+      showStatus(els.challengeStatus, 'Card saved as a PNG.', 'ok');
+    } catch {
+      showStatus(els.challengeStatus, "Couldn't share that card.", 'err');
+    }
+  }
+}
+
+async function onDownloadCard() {
+  const pack = currentShareCopy();
+  if (!pack.card) return;
+  try {
+    const both = await renderBothCards(pack.card);
+    downloadBlob(both.portrait.blob, `worth-it-${pack.card.verdictId || 'score'}-1080x1350.png`);
+    downloadBlob(both.story.blob, `worth-it-${pack.card.verdictId || 'score'}-1080x1920.png`);
+    showStatus(els.challengeStatus, 'Saved both card sizes (1080×1350 and 1080×1920).', 'ok');
+  } catch {
+    showStatus(els.challengeStatus, "Couldn't download the card.", 'err');
+  }
+}
+
+els.shareBtn?.addEventListener('click', () => onShareCard());
+els.downloadCardBtn?.addEventListener('click', () => onDownloadCard());
+
+function runBestValue(ev) {
+  ev?.preventDefault();
+  const result = rankBestValue(
+    {
+      budget: els.bestBudget.value,
+      bodyType: els.bestBody.value,
+      fuel: els.bestFuel.value,
+      maxAge: els.bestAge.value === '' ? undefined : Number(els.bestAge.value),
+      maxMileage: els.bestMiles.value === '' ? undefined : Number(els.bestMiles.value),
+    },
+    { models, segmentsById, now: NOW, index: priceIndex, limit: 5 },
+  );
+  els.bestResults.innerHTML = '';
+  if (!result.ok) {
+    els.bestResults.hidden = true;
+    els.bestEmpty.hidden = false;
+    els.bestEmpty.textContent = result.errors[0] || 'Need a budget to rank against.';
+    return;
+  }
+  if (!result.items.length) {
+    els.bestResults.hidden = true;
+    els.bestEmpty.hidden = false;
+    els.bestEmpty.textContent = "Nothing in the dataset fits that. Try a higher budget or looser filters.";
+    return;
+  }
+  els.bestEmpty.hidden = true;
+  els.bestResults.hidden = false;
+  result.items.forEach((item, i) => {
+    const li = document.createElement('li');
+    const title = document.createElement('h3');
+    title.textContent = `${i + 1}. ${item.model.make} ${item.model.model}`;
+    if (item.placeholder) {
+      const ph = document.createElement('span');
+      ph.className = 'ph';
+      ph.textContent = 'Placeholder';
+      title.append(ph);
+    }
+    const price = document.createElement('p');
+    price.className = 'price';
+    price.textContent = `Typical fair price ${formatGbp(item.expected)} · ${formatGbp(item.leftover)} under your budget`;
+    const meta = document.createElement('p');
+    meta.className = 'meta';
+    meta.textContent = formatBestValueLine(item);
+    li.append(title, price, meta);
+    els.bestResults.append(li);
+  });
+}
+
+els.bestForm?.addEventListener('submit', runBestValue);
+
+function isIos() {
+  const ua = navigator.userAgent || '';
+  return /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function recordCompletedCheck() {
+  try {
+    const n = Number(localStorage.getItem(CHECKS_KEY) || 0) + 1;
+    localStorage.setItem(CHECKS_KEY, String(n));
+  } catch { /* private mode */ }
+  maybeShowInstall();
+}
+function maybeShowInstall() {
+  if (!els.installBanner) return;
+  if (isStandalone()) {
+    els.installBanner.hidden = true;
+    return;
+  }
+  let n = 0;
+  let dismissed = false;
+  try {
+    n = Number(localStorage.getItem(CHECKS_KEY) || 0);
+    dismissed = localStorage.getItem(INSTALL_DISMISS_KEY) === '1';
+  } catch { /* ignore */ }
+  if (n < 2 || dismissed) {
+    els.installBanner.hidden = true;
+    return;
+  }
+  if (isIos()) {
+    els.installText.textContent = "Add Worth It? to your Home Screen: tap Share, then 'Add to Home Screen'.";
+    els.installBtn.hidden = true;
+    els.installBanner.hidden = false;
+    return;
+  }
+  if (deferredInstall) {
+    els.installText.textContent = 'Add Worth It? to your home screen for a quicker check next time.';
+    els.installBtn.hidden = false;
+    els.installBanner.hidden = false;
+  }
+}
+function setupInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (ev) => {
+    ev.preventDefault();
+    deferredInstall = ev;
+    maybeShowInstall();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstall = null;
+    if (els.installBanner) els.installBanner.hidden = true;
+  });
+  els.installBtn?.addEventListener('click', async () => {
+    if (!deferredInstall) return;
+    deferredInstall.prompt();
+    await deferredInstall.userChoice.catch(() => {});
+    deferredInstall = null;
+    els.installBanner.hidden = true;
+  });
+  els.installDismiss?.addEventListener('click', () => {
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, '1'); } catch { /* ignore */ }
+    els.installBanner.hidden = true;
+  });
+}
+
 // Expose a tiny hook used by the screenshot script.
-window.__worthIt = { CONFIG, APP_URL, WORKER_URL, runDemo, showConfirmDemo };
+window.__worthIt = { CONFIG, APP_URL, WORKER_URL, runDemo, showConfirmDemo, runDemoOverpriced, runBestValueDemo, exportCardPngs, showTab };
 function runDemo() {
   const fiesta = models.find((m) => m.id === 'ford-fiesta');
   if (!fiesta) return;
@@ -618,4 +913,38 @@ function showConfirmDemo() {
     gearbox: { value: 'manual', source: 'bookmarklet', confidence: 0.85 },
     price: { value: null, source: null, confidence: 0 },
   }, { defaultSource: 'bookmarklet' });
+}
+
+function runDemoOverpriced() {
+  const fiesta = models.find((m) => m.id === 'ford-fiesta');
+  if (!fiesta) return;
+  selectModel(fiesta);
+  els.year.value = '2019';
+  els.mileage.value = '42000';
+  els.engine.value = '1.0 EcoBoost';
+  els.fuel.value = 'petrol';
+  els.gearbox.value = 'manual';
+  els.asking.value = '7995';
+  runCheck(readForm());
+}
+
+function runBestValueDemo() {
+  showTab('best');
+  els.bestBudget.value = '15000';
+  els.bestBody.value = '';
+  els.bestFuel.value = '';
+  els.bestAge.value = '8';
+  els.bestMiles.value = '80000';
+  runBestValue();
+}
+
+async function exportCardPngs() {
+  if (!lastListing || !lastResult) return null;
+  const card = buildCardModel({ listing: lastListing, result: lastResult, appUrl: APP_URL });
+  const both = await renderBothCards(card);
+  return {
+    verdict: card.verdictId,
+    portrait: both.portrait.dataUrl,
+    story: both.story.dataUrl,
+  };
 }
