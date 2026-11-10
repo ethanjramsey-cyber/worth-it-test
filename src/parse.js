@@ -176,8 +176,33 @@ export function normaliseFuel(value) {
   return null;
 }
 
+const EV_EQUIPMENT = /\belectric(?:ally)?[\s-]+(?:\w+[\s-]+)?(?:windows?|mirrors?|seats?|handbrake|hand brake|parking brake|park brake|tailgate|boot|sunroof|roof|heated|power|steering|folding|adjust\w*|front|rear|door|locking|locks?|operated|assist\w*|memory|fold|screen)\b/gi;
+
+/**
+ * Fuel from free text (a whole listing page or pasted text). Stricter than normaliseFuel:
+ * "electric windows" must not make a petrol car electric. Prefers an explicit "Fuel type: X".
+ */
 export function parseFuel(text) {
-  return normaliseFuel(text);
+  if (!text) return null;
+  const raw = String(text);
+  if (raw.length < 40 && !/\s{2,}/.test(raw)) return normaliseFuel(raw);
+  const labelled = raw.match(/\bfuel(?:\s*type)?\s*[:\-]?\s*(petrol|diesel|plug[-\s]?in hybrid|hybrid|electric|lpg)\b/i);
+  if (labelled) return normaliseFuel(labelled[1]);
+  const cleaned = raw.replace(EV_EQUIPMENT, ' ');
+  const low = cleaned.toLowerCase();
+  if (/\bplug[-\s]?in\b/.test(low) && /hybrid/.test(low)) return 'phev';
+  if (/\bphev\b/.test(low)) return 'phev';
+  if (/\bhybrid\b|\bmhev\b/.test(low)) return 'hybrid';
+  const hasDiesel = /\bdiesel\b|\btdi\b|\btdci\b|\bcdti\b/.test(low);
+  const hasPetrol = /\b(petrol|gasoline|unleaded)\b|\becoboost\b|\btsi\b|\btfsi\b/.test(low);
+  if (hasDiesel && !hasPetrol) return 'diesel';
+  if (hasPetrol && !hasDiesel) return 'petrol';
+  if (hasDiesel && hasPetrol) return null;
+  if (/(^|[,;|\n])\s*(electric|bev)\s*([,;|\n]|$)/.test(low)) return 'electric';
+  if (cleaned.length < 300 && /\b(electric|bev)\b/.test(low)) return 'electric';
+  if (/\b(electric|bev)\b/.test(low) && /\b(kwh|zero emission|charging|range|ev)\b/.test(low)) return 'electric';
+  if (/\bfully electric\b|\b100% electric\b/.test(low)) return 'electric';
+  return null;
 }
 
 function normName(s) {
