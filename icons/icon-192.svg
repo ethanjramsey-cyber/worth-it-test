@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#0b0c0f"/>
+  <rect x="10" y="10" width="172" height="172" rx="32" fill="none" stroke="#f5a623" stroke-width="6"/>
+  <text x="96" y="118" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="86" font-weight="750" fill="#f5a623">£?</text>
+</svg>
