@@ -1,6 +1,6 @@
-import { APP_URL, WORKER_URL, EXTRACT_PATH } from './src/config.js';
+import { APP_URL, WORKER_URL, EXTRACT_PATH, PARSE_PATH } from './src/config.js';
 import { checkListing, formatGbp, formatMiles, CONFIG } from './src/score.js';
-import { datasetFreshness, datasetHasPlaceholders, isPlaceholderModel } from './src/priceSource.js';
+import { datasetFreshness, datasetHasDrafts, datasetHasPlaceholders, isDraftModel, isPlaceholderModel } from './src/priceSource.js';
 import { buildCardModel, shareText, challengeLinkFor, renderShareCardPng, renderBothCards, shareOrDownload, downloadBlob, CARD_SIZES } from './src/shareCard.js';
 import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.js';
 import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
@@ -70,6 +70,9 @@ const els = {
   confirmFields: $('confirm-fields'),
   confirmBtn: $('confirm-btn'),
   confirmCancel: $('confirm-cancel'),
+  screenshotField: $('screenshot-field'),
+  listingScreenshot: $('listing-screenshot'),
+  screenshotStatus: $('screenshot-status'),
 };
 
 let models = [];
@@ -78,6 +81,7 @@ let priceIndex = null;
 let kb = { entries: [] };
 let genericQuestions = [];
 let selectedModel = null;
+let lastListingIdentity = { make: null, model: null, year: null };
 let lastQuestions = null;
 let lastListing = null;
 let lastResult = null;
@@ -124,18 +128,64 @@ function selectModel(model, { keepSearch = false } = {}) {
     if (!keepSearch) els.modelSearch.value = `${model.make} ${model.model}`;
     els.modelChosen.hidden = false;
     els.modelChosen.textContent = `${model.make} ${model.model}`;
-    els.modelChosen.classList.toggle('is-placeholder', isPlaceholderModel(model));
+    els.modelChosen.classList.toggle('is-draft', isDraftModel(model));
+    els.modelChosen.classList.toggle('is-placeholder', isPlaceholderModel(model) && !isDraftModel(model));
     fuelOptionsFor(model);
     engineOptionsFor(model);
   } else {
     els.modelChosen.hidden = true;
     els.modelChosen.textContent = '';
-    els.modelChosen.classList.remove('is-placeholder');
+    els.modelChosen.classList.remove('is-placeholder', 'is-draft');
     fuelOptionsFor(null);
     engineOptionsFor(null);
   }
   els.modelResults.hidden = true;
   els.modelResults.innerHTML = '';
+}
+
+function setListingIdentity(make, model, year) {
+  lastListingIdentity = {
+    make: make || null,
+    model: model || null,
+    year: year ?? lastListingIdentity.year ?? null,
+  };
+}
+
+/**
+ * Show the exact make and model from the listing. Only select a dataset row
+ * when it truly matches; never substitute a sibling (e.g. 3 Series for 2 Series).
+ */
+function showParsedModel(make, model, text) {
+  const matched = text
+    ? matchModelFromText(text, { make, model })
+    : matchModel(make, model, models);
+  if (matched) {
+    selectModel(matched);
+    setListingIdentity(make || matched.make, model || matched.model);
+    return matched;
+  }
+  selectedModel = null;
+  els.modelId.value = '';
+  const label = [make, model].filter(Boolean).join(' ');
+  if (label) els.modelSearch.value = label;
+  if (els.modelChosen) {
+    if (make && model) {
+      els.modelChosen.hidden = false;
+      els.modelChosen.textContent = label;
+      els.modelChosen.classList.remove('is-placeholder', 'is-draft');
+      els.modelChosen.classList.add('is-unknown');
+    } else {
+      els.modelChosen.hidden = true;
+      els.modelChosen.textContent = '';
+      els.modelChosen.classList.remove('is-placeholder', 'is-draft', 'is-unknown');
+    }
+  }
+  fuelOptionsFor(null);
+  engineOptionsFor(null);
+  els.modelResults.hidden = true;
+  els.modelResults.innerHTML = '';
+  setListingIdentity(make, model);
+  return null;
 }
 
 function filterModels(query) {
@@ -156,9 +206,11 @@ function renderTypeahead(query) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.role = 'option';
-    btn.textContent = isPlaceholderModel(m)
-      ? `${m.make} ${m.model} (placeholder price)`
-      : `${m.make} ${m.model}`;
+    btn.textContent = isDraftModel(m)
+      ? `${m.make} ${m.model} (draft price)`
+      : isPlaceholderModel(m)
+        ? `${m.make} ${m.model} (placeholder price)`
+        : `${m.make} ${m.model}`;
     btn.addEventListener('click', () => selectModel(m));
     li.append(btn);
     els.modelResults.append(li);
@@ -174,6 +226,7 @@ els.modelSearch.addEventListener('input', () => {
     selectedModel = null;
     els.modelId.value = '';
     els.modelChosen.hidden = true;
+    els.modelChosen.classList.remove('is-unknown');
     renderTypeahead(q);
   }
 });
@@ -223,7 +276,15 @@ function clearHighlights() {
 
 function renderConfirm(input, opts = {}) {
   const state = buildConfirmState(input, opts);
-  if (els.confirmSource) els.confirmSource.textContent = state.summary;
+  const unmatched = unmatchedModelMessage(
+    { make: input.make, model: input.model, year: input.year },
+    matchModel(input.make, input.model, models),
+  );
+  if (els.confirmSource) {
+    els.confirmSource.textContent = unmatched
+      ? (unmatched + (state.summary ? ` ${state.summary}` : ''))
+      : state.summary;
+  }
   if (els.confirmFields) {
     els.confirmFields.innerHTML = '';
     for (const s of state.statuses) {
@@ -257,10 +318,60 @@ function hideConfirm() {
   clearHighlights();
 }
 
+let pasteSeq = 0;
+
+function parseEndpoint() {
+  if (!WORKER_URL) return null;
+  const base = WORKER_URL.replace(/\/+$/, '');
+  return `${base}${PARSE_PATH}`;
+}
+
+function isBlankField(value) {
+  return value == null || value === '';
+}
+
+function mergeMissingListingFields(base, extra, source) {
+  if (!extra) return base;
+  const keys = ['make', 'model', 'year', 'mileage', 'fuel', 'price', 'engine', 'gearbox'];
+  const out = { ...base, fields: { ...(base.fields || {}) } };
+  for (const key of keys) {
+    if (!isBlankField(out[key])) continue;
+    const value = extra[key];
+    if (isBlankField(value)) continue;
+    out[key] = value;
+    out.fields[key] = { value, source, confidence: extra.fields?.[key]?.confidence ?? 0.7 };
+  }
+  return out;
+}
+
+async function requestParse(payload) {
+  const endpoint = parseEndpoint();
+  if (!endpoint) return null;
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.ok === false) return { error: true, message: data?.message };
+    return data;
+  } catch {
+    return { error: true };
+  }
+}
+
 function applyParsedText(text) {
+  const seq = ++pasteSeq;
   const pasteStatus = $('paste-status');
   const trimmed = String(text || '').trim();
   const isLink = /^https?:\/\/\S+$/i.test(trimmed);
+  if (isLink && WORKER_URL && extractEndpoint()) {
+    if (els.listingUrl) els.listingUrl.value = trimmed;
+    if (els.urlImport) els.urlImport.hidden = false;
+    fetchListingUrl();
+    return;
+  }
   if (isLink && !WORKER_URL) {
     // Link-only paste: we can't open the page from the browser, so read what the link itself says.
     let slug = '';
@@ -276,6 +387,64 @@ function applyParsedText(text) {
     showStatus(pasteStatus, '', '');
   }
   const parsed = parseListingDetails(text, NOW);
+  fillFormFromParsed(parsed, text);
+  const unmatched = unmatchedModelMessage(parsed, selectedModel);
+  if (unmatched) {
+    const prefix = (isLink && !WORKER_URL)
+      ? "We can't open listing links yet, so we only read the link's own words. "
+      : '';
+    showStatus(pasteStatus, prefix + unmatched, 'err');
+  }
+  // Prefill whatever was found even when mileage or price is missing.
+  const any = parsed.year || parsed.mileage != null || parsed.price != null || parsed.fuel || parsed.gearbox || parsed.engine || parsed.make || parsed.model;
+  const confirmInput = listingFromParsed(parsed);
+  if (any) {
+    renderConfirm(confirmInput, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
+  }
+
+  const needsAi = Boolean(parseEndpoint()) && !isLink && trimmed.length >= 20
+    && (isBlankField(parsed.year) || isBlankField(parsed.mileage) || isBlankField(parsed.price));
+  if (!needsAi) return;
+
+  showStatus(pasteStatus, unmatched
+    ? unmatched
+    : (any ? 'Reading the rest of the listing with AI…' : 'Reading the listing with AI…'), unmatched ? 'err' : '');
+  requestParse({ text: trimmed.slice(0, 6000) }).then((data) => {
+    if (seq !== pasteSeq) return;
+    if (!data || data.error) {
+      if (!any) {
+        showStatus(pasteStatus, data?.message || "Couldn't read that automatically. Enter the details yourself.", 'err');
+      } else if (unmatched) {
+        showStatus(pasteStatus, unmatched, 'err');
+      } else {
+        showStatus(pasteStatus, '', '');
+      }
+      return;
+    }
+    const merged = mergeMissingListingFields(confirmInput, data, 'ai-pasted-text');
+    fillFormFromExtracted(merged, { onlyMissing: true });
+    const maybe = selectedModel || matchModelFromText(text, merged);
+    const stillUnmatched = unmatchedModelMessage(merged, maybe);
+    renderConfirm(merged, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
+    if (stillUnmatched) showStatus(pasteStatus, stillUnmatched, 'err');
+    else showStatus(pasteStatus, 'Have a look below — some fields were filled by an AI read of your pasted text.', 'ok');
+  });
+}
+
+function listingFromParsed(parsed) {
+  return {
+    make: parsed.make || selectedModel?.make || null,
+    model: parsed.model || selectedModel?.model || null,
+    year: parsed.year,
+    mileage: parsed.mileage,
+    fuel: parsed.fuel,
+    engine: parsed.engine?.text || parsed.engine || null,
+    gearbox: parsed.gearbox,
+    price: parsed.price,
+  };
+}
+
+function fillFormFromParsed(parsed, text) {
   if (parsed.year && !els.year.value) els.year.value = parsed.year;
   if (parsed.mileage != null && !els.mileage.value) els.mileage.value = parsed.mileage;
   if (parsed.price != null && !els.asking.value) els.asking.value = parsed.price;
@@ -285,34 +454,41 @@ function applyParsedText(text) {
   }
   if (parsed.gearbox && !els.gearbox.value) els.gearbox.value = parsed.gearbox;
   if (parsed.engine && !els.engine.value) els.engine.value = parsed.engine.text;
-  let maybe = selectedModel;
-  if (!selectedModel) {
-    maybe = matchModelFromText(text, { ...parsed, make: parsed.make, model: parsed.model });
-    if (maybe) selectModel(maybe);
-    else if (parsed.make || parsed.model) {
-      els.modelSearch.value = [parsed.make, parsed.model].filter(Boolean).join(' ');
+  if (parsed.make || parsed.model) {
+    if (!selectedModel) showParsedModel(parsed.make, parsed.model, text);
+    else setListingIdentity(parsed.make, parsed.model, parsed.year);
+  }
+}
+
+function fillFormFromExtracted(data, opts = {}) {
+  const onlyMissing = Boolean(opts.onlyMissing);
+  const blank = (el) => !el.value;
+  if ((data.make || data.model) && (!onlyMissing || !selectedModel)) {
+    showParsedModel(data.make, data.model);
+  } else if (data.make || data.model) {
+    setListingIdentity(data.make, data.model, data.year);
+  }
+  if (data.year && (!onlyMissing || blank(els.year))) els.year.value = data.year;
+  if (data.mileage != null && (!onlyMissing || blank(els.mileage))) els.mileage.value = data.mileage;
+  if (data.price != null && (!onlyMissing || blank(els.asking))) els.asking.value = data.price;
+  if (data.fuel && (!onlyMissing || blank(els.fuel))) {
+    const n = normaliseFuel(data.fuel);
+    if (n) {
+      if (![...els.fuel.options].some((o) => o.value === n)) {
+        const opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = n;
+        els.fuel.append(opt);
+      }
+      els.fuel.value = n;
     }
   }
-  const unmatched = unmatchedModelMessage(parsed, maybe);
-  if (unmatched) {
-    const prefix = (isLink && !WORKER_URL)
-      ? "We can't open listing links yet, so we only read the link's own words. "
-      : '';
-    showStatus(pasteStatus, prefix + unmatched, 'err');
+  if (data.engine && (!onlyMissing || blank(els.engine))) {
+    els.engine.value = typeof data.engine === 'string' ? data.engine : (data.engine.text || '');
   }
-  // Prefill whatever was found even when mileage or price is missing.
-  const any = parsed.year || parsed.mileage != null || parsed.price != null || parsed.fuel || parsed.gearbox || parsed.engine || parsed.make || parsed.model;
-  if (any) {
-    renderConfirm({
-      make: selectedModel?.make || parsed.make || null,
-      model: selectedModel?.model || parsed.model || null,
-      year: parsed.year,
-      mileage: parsed.mileage,
-      fuel: parsed.fuel,
-      engine: parsed.engine?.text || parsed.engine || null,
-      gearbox: parsed.gearbox,
-      price: parsed.price,
-    }, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
+  if (data.gearbox && (!onlyMissing || blank(els.gearbox))) {
+    const g = normaliseGearbox(data.gearbox);
+    if (g) els.gearbox.value = g;
   }
 }
 
@@ -329,10 +505,7 @@ function matchModelFromText(text, parsed) {
 
 function prefillFromParams(p) {
   if (p.make || p.model) {
-    const found = matchModel(p.make, p.model, models);
-    if (found) selectModel(found);
-    else if (p.make && p.model) els.modelSearch.value = `${p.make} ${p.model}`;
-    else els.modelSearch.value = p.make || p.model || '';
+    showParsedModel(p.make, p.model);
   }
   if (p.year) els.year.value = p.year;
   if (p.mileage != null) els.mileage.value = p.mileage;
@@ -350,8 +523,8 @@ function prefillFromParams(p) {
   const any = p.make || p.model || p.year || p.mileage != null || p.fuel || p.engine || p.gearbox || p.price != null;
   if (imported && any) {
     renderConfirm({
-      make: selectedModel?.make || p.make || null,
-      model: selectedModel?.model || p.model || null,
+      make: p.make || selectedModel?.make || null,
+      model: p.model || selectedModel?.model || null,
       year: p.year,
       mileage: p.mileage,
       fuel: p.fuel,
@@ -375,7 +548,11 @@ function readForm() {
 }
 
 function validateForm(input) {
-  if (!input.model) return 'Pick a make and model first.';
+  if (!input.model) {
+    const listing = lastListingIdentity;
+    if (listing?.make && listing?.model) return unmatchedModelMessage(listing, null);
+    return 'Pick a make and model first.';
+  }
   if (!Number.isFinite(input.year) || input.year < 1990 || input.year > NOW.getFullYear() + 1) {
     return 'Need a sensible year on that.';
   }
@@ -562,12 +739,112 @@ function extractEndpoint() {
 if (extractEndpoint()) {
   els.urlImport.hidden = false;
 }
+if (parseEndpoint() && els.screenshotField) {
+  els.screenshotField.hidden = false;
+}
+
+els.listingScreenshot?.addEventListener('change', () => {
+  const file = els.listingScreenshot.files && els.listingScreenshot.files[0];
+  if (file) handleScreenshot(file);
+});
+
+async function downscaleImage(file, maxWidth = 1280) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('image'));
+      image.src = url;
+    });
+    const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    let quality = 0.8;
+    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+    while (dataUrl.length > 1_500_000 && quality > 0.4) {
+      quality -= 0.15;
+      dataUrl = canvas.toDataURL('image/jpeg', quality);
+    }
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function handleScreenshot(file) {
+  const status = els.screenshotStatus;
+  if (!parseEndpoint()) {
+    showStatus(status, "Couldn't read that automatically. Enter the details yourself.", 'err');
+    return;
+  }
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    showStatus(status, "That doesn't look like an image. Try another screenshot, or enter the details yourself.", 'err');
+    return;
+  }
+  showStatus(status, 'Reading the screenshot with AI…', '');
+  try {
+    const image = await downscaleImage(file);
+    if (!image || image.length > 1_500_000) {
+      showStatus(status, 'That screenshot is too large. Try a smaller image, or enter the details yourself.', 'err');
+      return;
+    }
+    const data = await requestParse({ image });
+    if (!data || data.error) {
+      showStatus(status, data?.message || "Couldn't read that screenshot. Enter the details yourself.", 'err');
+      return;
+    }
+    const keys = ['make', 'model', 'year', 'mileage', 'fuel', 'price', 'engine', 'gearbox'];
+    const got = keys.filter((k) => data[k] != null && data[k] !== '');
+    if (!got.length) {
+      showStatus(status, data.message || "Couldn't read the details. Enter them yourself.", 'err');
+      return;
+    }
+    fillFormFromExtracted(data, { onlyMissing: true });
+    showStatus(status, 'Have a look below — is this right? Fields came from an AI read of your screenshot.', 'ok');
+    renderConfirm(data, { defaultSource: 'ai-screenshot', defaultConfidence: data.confidence ?? 0.7 });
+  } catch {
+    showStatus(status, "Couldn't read that screenshot. Enter the details yourself.", 'err');
+  } finally {
+    if (els.listingScreenshot) els.listingScreenshot.value = '';
+  }
+}
 
 els.fetchUrlBtn?.addEventListener('click', () => fetchListingUrl());
+els.listingUrl?.addEventListener('paste', () => {
+  setTimeout(() => {
+    const url = (els.listingUrl.value || '').trim();
+    if (/^https?:\/\/\S+$/i.test(url) && extractEndpoint()) fetchListingUrl();
+  }, 0);
+});
+
+function applySlugFallback(url, reasonMessage) {
+  let slug = '';
+  try { slug = decodeURIComponent(new URL(url).pathname).replace(/[-_/+]+/g, ' '); } catch { /* ignore */ }
+  const parsed = slug ? parseListingDetails(slug, NOW) : {};
+  const found = parsed.make || parsed.model || parsed.year;
+  if (!found) {
+    showStatus(els.urlStatus, reasonMessage, 'err');
+    return false;
+  }
+  fillFormFromParsed(parsed, slug);
+  const confirmInput = listingFromParsed(parsed);
+  renderConfirm(confirmInput, { defaultSource: 'url-params', defaultConfidence: 0.6 });
+  const unmatched = unmatchedModelMessage(confirmInput, matchModel(confirmInput.make, confirmInput.model, models));
+  showStatus(
+    els.urlStatus,
+    `${reasonMessage} We only read the link's own words.${unmatched ? ` ${unmatched}` : ''}`,
+    'err',
+  );
+  return true;
+}
 
 async function fetchListingUrl() {
   const endpoint = extractEndpoint();
-  const url = els.listingUrl.value.trim();
+  const url = (els.listingUrl?.value || '').trim();
   if (!endpoint) return;
   if (!url || !/^https?:\/\//i.test(url)) {
     showStatus(els.urlStatus, "That doesn't look like a web link. Paste a full http(s) URL, or enter the details yourself.", 'err');
@@ -583,24 +860,30 @@ async function fetchListingUrl() {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data) {
-      showStatus(els.urlStatus, "Couldn't read that page. Paste the listing text or enter the details yourself.", 'err');
+      applySlugFallback(url, "Couldn't read that page. Paste the listing text or enter the details yourself.");
       return;
     }
     if (data.error === 'blocked' || data.error === 'timeout' || data.error === 'network' || data.error === 'http-error' || data.error === 'too-large') {
-      showStatus(els.urlStatus, data.message || 'The site refused the request. Paste the listing text or enter the details yourself.', 'err');
+      applySlugFallback(url, data.message || 'The site refused the request. Paste the listing text or enter the details yourself.');
       return;
     }
     const keys = ['make', 'model', 'year', 'mileage', 'fuel', 'price', 'engine', 'gearbox'];
     const got = keys.filter((k) => data[k] != null && data[k] !== '');
     if (!got.length) {
-      showStatus(els.urlStatus, data.message || "Couldn't read the details from this page. Try the bookmarklet or paste the listing text.", 'err');
+      applySlugFallback(url, data.message || "Couldn't read the details from this page. Try the bookmarklet or paste the listing text.");
       return;
     }
     applyExtracted(data);
-    showStatus(els.urlStatus, 'Have a look below — is this right?', 'ok');
-    renderConfirm(data, { defaultSource: data.source || 'import', defaultConfidence: data.confidence ?? 0.8 });
+    const confirmData = {
+      ...data,
+      make: data.make || selectedModel?.make || null,
+      model: data.model || selectedModel?.model || null,
+    };
+    const unmatched = unmatchedModelMessage(confirmData, matchModel(confirmData.make, confirmData.model, models));
+    showStatus(els.urlStatus, unmatched || 'Have a look below — is this right?', unmatched ? 'err' : 'ok');
+    renderConfirm(confirmData, { defaultSource: data.source || 'import', defaultConfidence: data.confidence ?? 0.8 });
   } catch {
-    showStatus(els.urlStatus, "Couldn't reach the lookup service. Paste the listing text or enter the details yourself.", 'err');
+    applySlugFallback(url, "Couldn't reach the lookup service. Paste the listing text or enter the details yourself.");
   } finally {
     els.fetchUrlBtn.disabled = false;
   }
@@ -608,9 +891,7 @@ async function fetchListingUrl() {
 
 function applyExtracted(data) {
   if (data.make || data.model) {
-    const found = matchModel(data.make, data.model, models);
-    if (found) selectModel(found);
-    else els.modelSearch.value = [data.make, data.model].filter(Boolean).join(' ');
+    showParsedModel(data.make, data.model);
   }
   if (data.year) els.year.value = data.year;
   if (data.mileage != null) els.mileage.value = data.mileage;
@@ -645,14 +926,24 @@ els.confirmCancel.addEventListener('click', () => {
 
 function applyDataLabels(modelList, index) {
   const hasPlaceholders = datasetHasPlaceholders(modelList);
+  const hasDrafts = datasetHasDrafts(modelList);
   const freshness = datasetFreshness(modelList, index);
   if (els.dataBanner) {
-    if (hasPlaceholders) {
-      const all = modelList.length && modelList.every((m) => isPlaceholderModel(m));
+    if (hasPlaceholders || hasDrafts) {
+      const allUnverified = modelList.length && modelList.every((m) => isPlaceholderModel(m));
+      const allDrafts = modelList.length && modelList.every((m) => isDraftModel(m));
       els.dataBanner.hidden = false;
-      els.dataBanner.textContent = all
-        ? 'Placeholder prices — invented round numbers, not real market data. Ethan still needs to sanity-check these.'
-        : 'Some models still have placeholder prices. A placeholder score is indicative only, not a confident verdict.';
+      if (allDrafts) {
+        els.dataBanner.textContent = "Draft prices — sourced estimates awaiting Ethan's check. A draft score is indicative only, not a confident verdict.";
+      } else if (hasDrafts && allUnverified) {
+        els.dataBanner.textContent = "Draft and placeholder prices — not yet signed off by Ethan. Those scores are indicative only, not a confident verdict.";
+      } else if (hasDrafts) {
+        els.dataBanner.textContent = "Some models still have draft or placeholder prices. Those scores are indicative only, not a confident verdict.";
+      } else if (allUnverified) {
+        els.dataBanner.textContent = 'Placeholder prices — invented round numbers, not real market data. Ethan still needs to sanity-check these.';
+      } else {
+        els.dataBanner.textContent = 'Some models still have placeholder prices. A placeholder score is indicative only, not a confident verdict.';
+      }
     } else {
       els.dataBanner.hidden = true;
     }
@@ -667,9 +958,11 @@ function applyDataLabels(modelList, index) {
     }
   }
   if (els.disclaimer) {
-    els.disclaimer.textContent = hasPlaceholders
-      ? 'Estimates, not a valuation. Figures come from a placeholder dataset until Ethan reviews them.'
-      : 'Estimates, not a valuation. Prices were set by Ethan and moved with the official ONS used-car index.';
+    els.disclaimer.textContent = hasDrafts
+      ? "Estimates, not a valuation. Draft figures still need Ethan's review."
+      : hasPlaceholders
+        ? 'Estimates, not a valuation. Figures come from a placeholder dataset until Ethan reviews them.'
+        : 'Estimates, not a valuation. Prices were set by Ethan and moved with the official ONS used-car index.';
   }
 }
 
@@ -794,10 +1087,10 @@ function runBestValue(ev) {
     const li = document.createElement('li');
     const title = document.createElement('h3');
     title.textContent = `${i + 1}. ${item.model.make} ${item.model.model}`;
-    if (item.placeholder) {
+    if (item.draft || item.placeholder) {
       const ph = document.createElement('span');
       ph.className = 'ph';
-      ph.textContent = 'Placeholder';
+      ph.textContent = item.draft ? 'Draft' : 'Placeholder';
       title.append(ph);
     }
     const price = document.createElement('p');

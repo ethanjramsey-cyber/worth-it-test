@@ -221,6 +221,19 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 1px rgba(245, 166, 35, 0.45);
   border-color: rgba(245, 166, 35, 0.45);
 }
+.chosen.is-draft::after {
+  content: "Draft price";
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #3a2a10;
+  color: #ffd789;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
 .chosen.is-placeholder::after {
   content: "Placeholder price";
   display: inline-block;
@@ -487,3 +500,14 @@ a.bookmarklet { text-decoration: none; }
 .install-banner p { margin: 0 0 10px; font-size: 0.9rem; line-height: 1.4; }
 .install-actions { display: flex; gap: 8px; }
 .install-actions .btn { width: auto; flex: 1; margin: 0; }
+
+.screenshot-field input[type="file"] {
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.chosen.is-unknown {
+  color: var(--text);
+  font-weight: 600;
+}
