@@ -2,10 +2,16 @@
  * Value score logic for Worth It? (pure functions, no DOM).
  *
  * Expected price (v1, explainable):
- *   expected = refPrice × ageFactor × mileageFactor
+ *   expected = adjustedRef × ageFactor × mileageFactor
+ *   adjustedRef   = refPrice × indexFactor
+ *                   (indexFactor = latest ONS L545 / index at model.baseDate;
+ *                    defaults to 1 if the index is missing or a move is refused)
  *   ageFactor     = clamp(ageFloor, ageCeiling, (1 - annualDecay) ** (age - refAge))
  *   mileageFactor = clamp(milesFloor, milesCeiling,
  *                         1 + per10kMilesAdj × (mileage - refMiles) / 10_000)
+ *
+ * Placeholder models can still produce an indicative expected price when a
+ * seed refPrice exists, but the result is never marked confident.
  *
  * Age is calendar-year difference: now.year - registration year.
  * Fuel is accepted for a stable API but does not change the price in v1.
@@ -23,6 +29,8 @@
  *
  * Fair range is expected ±8%, rounded to the nearest £50 (or £100 if mid ≥ £8,000).
  */
+
+import { getReference } from './priceSource.js';
 
 export const CONFIG = Object.freeze({
   appName: 'Worth It?',
@@ -123,13 +131,14 @@ export function mileageFactor(curve, mileage, refMiles = 30000) {
  * @param {object} curve - row from segments.json
  * @returns {number|null}
  */
-export function expectedPrice(model, year, mileage, _fuel, now = new Date(), curve) {
+export function expectedPrice(model, year, mileage, _fuel, now = new Date(), curve, index = null) {
   if (!model || !curve) return null;
   const age = ageYears(year, now);
   if (age === null || age < 0 || age > 80) return null;
   const miles = Number(mileage);
   if (!Number.isFinite(miles) || miles < 0) return null;
-  const ref = Number(model.refPrice);
+  const resolved = getReference(model, { index });
+  const ref = Number(resolved.refPrice);
   if (!Number.isFinite(ref) || ref <= 0) return null;
   const refAge = model.refAge ?? 3;
   const refMiles = model.refMiles ?? 30000;
@@ -249,23 +258,52 @@ export function formatFairRange(range) {
 /**
  * Convenience bundle for the checker UI.
  */
-export function checkListing({ model, year, mileage, fuel, asking, now = new Date(), curve }) {
-  const expected = expectedPrice(model, year, mileage, fuel, now, curve);
-  if (expected === null) return null;
+export function checkListing({ model, year, mileage, fuel, asking, now = new Date(), curve, index = null }) {
+  const resolved = getReference(model, { index });
+  const expected = expectedPrice(model, year, mileage, fuel, now, curve, index);
+  if (expected === null) {
+    // Refuse a score when there is no usable reference price.
+    return {
+      expected: null,
+      score: null,
+      verdict: null,
+      tagline: '',
+      range: null,
+      rangeText: '',
+      delta: null,
+      deltaText: '',
+      asking: Number.isFinite(Number(asking)) ? Number(asking) : null,
+      confident: false,
+      placeholder: resolved.placeholder,
+      caution: resolved.caution,
+      indexFactor: resolved.indexFactor,
+      freshness: resolved.freshness,
+      source: resolved.source,
+    };
+  }
   const askingN = Number(asking);
   if (!Number.isFinite(askingN) || askingN < 0) return null;
   const score = valueScore(askingN, expected);
   const verdict = verdictFromScore(score);
   const range = fairPriceRange(expected);
+  // Placeholder (and any other non-confident source) may still show an
+  // indicative number, but must never be presented as a confident verdict.
+  const confident = resolved.confident === true;
   return {
     expected,
     score,
     verdict,
-    tagline: pickTagline(verdict, daysSinceEpoch(now)),
+    tagline: confident ? pickTagline(verdict, daysSinceEpoch(now)) : '',
     range,
     rangeText: formatFairRange(range),
     delta: deltaAmount(askingN, expected),
     deltaText: deltaText(askingN, expected),
     asking: askingN,
+    confident,
+    placeholder: resolved.placeholder,
+    caution: confident ? null : (resolved.caution || 'Indicative only — this is not a confident score.'),
+    indexFactor: resolved.indexFactor,
+    freshness: resolved.freshness,
+    source: resolved.source,
   };
 }

@@ -107,7 +107,8 @@ export function confirmSummary(statuses) {
     parts.push(`${listEnglish(missing.map((s) => s.label.toLowerCase()))} ${missing.length === 1 ? 'is' : 'are'} missing — please fill ${missing.length === 1 ? 'it' : 'them'} in`);
   }
   if (!parts.length) return 'Have a quick look and fix anything we’ve got wrong before we score it.';
-  return `${parts.join('. ')}.`;
+  const text = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('. ');
+  return `${text}.`;
 }
 
 function listEnglish(items) {

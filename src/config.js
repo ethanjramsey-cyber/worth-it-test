@@ -13,6 +13,6 @@ export const APP_URL = '';
  * Origin of the listing-extract worker, no trailing path required.
  * Empty = feature hidden. Local: 'http://127.0.0.1:8787'
  */
-export const WORKER_URL = '';
+export const WORKER_URL = 'https://worth-it-extract.pages.dev';
 
 export const EXTRACT_PATH = '/extract';

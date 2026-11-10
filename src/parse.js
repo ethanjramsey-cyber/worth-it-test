@@ -252,6 +252,20 @@ export function matchModel(make, modelName, models) {
 }
 
 /**
+ * Status copy when a listing was parsed but the model is not in the curated
+ * price dataset. Returns null if make/model are incomplete or a row matched.
+ * Never invents a substitute model or a price.
+ */
+export function unmatchedModelMessage(parsed, matched) {
+  if (matched) return null;
+  const make = parsed?.make != null ? String(parsed.make).trim() : '';
+  const model = parsed?.model != null ? String(parsed.model).trim() : '';
+  if (!make || !model) return null;
+  const year = parsed?.year != null && parsed.year !== '' ? `${parsed.year} ` : '';
+  return `We've read this as a ${year}${make} ${model}, but we don't have price data for that model yet. Try another car, or tell us it's one we should add.`;
+}
+
+/**
  * Try to pull a known make from free text (title etc.).
  */
 export function findMakeInText(text, models) {

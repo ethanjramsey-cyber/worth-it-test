@@ -5,44 +5,45 @@
  * After load, every entry has the canonical shape:
  *
  *   {
- *     make: string|null,
- *     model: string,
- *     yearFrom: number,
- *     yearTo: number,
- *     engine: { raw: string, litres: number|null, cc: number|null, tokens: string[] },
+ *     make, makeKey, model, generation,
+ *     yearFrom, yearTo,
+ *     engine: { raw, litres, cc, tokens, matcher, label },
+ *     fuel: 'petrol'|'diesel'|... | null,
+ *     fuels: Set-like string[]  (supports 'petrol/diesel', 'any'),
  *     timingType: 'belt' | 'chain' | 'belt-in-oil' | 'none' | 'unknown',
- *     interval: { years: number|null, miles: number|null, text: string|null },
- *     knownIssues: string[],
- *     confidence: 'verified' | 'needs-Ethan-check',
- *     source: string|null,
- *     placeholder: boolean,
- *     raw: object
+ *     timingConfidence: 'verified' | 'needs-Ethan-check',
+ *     interval: { years, miles, text, confidence, note },
+ *     knownIssues: [{ note, detail, confidence, source }],
+ *     questions: [{ text, why, confidence, source }],
+ *     confidence: entry-level (usually 'needs-Ethan-check' until Ethan signs off),
+ *     reviewStatus: string|null,
+ *     source, placeholder, raw
  *   }
  *
- * Accepted input variants (researcher files may use any of these):
+ * Showing facts to users:
+ *   Do NOT use entry-level `confidence` / `reviewStatus` as the show/hide switch.
+ *   Those stay 'needs-Ethan-check' until Ethan signs the whole row off.
+ *   In normal mode, show only per-fact `verified` items:
+ *     - timingType when timingConfidence === 'verified'
+ *     - official interval when interval.confidence === 'verified'
+ *     - knownIssues[i] when that issue's confidence === 'verified'
+ *     - questions[i] when that question's confidence === 'verified'
+ *   Everything else is hidden unless ?review=1, and then clearly badged.
  *
- *   make            — make, manufacturer, brand
- *   model           — model, modelName, name; or a combined "Ford Fiesta" in model/name
- *   years           — years: [from, to] | {from,to} | {start,end} | "2017-2020"
- *                     yearFrom/yearTo, yearStart/yearEnd, fromYear/toYear,
- *                     startYear/endYear, year_from/year_to, yearRange
- *   engine          — engine, engineSize, engine_size, engines (string or first of array),
- *                     displacement, capacity, or { size, litres, cc, name, code, label }
- *   timing type     — timingType, timing, timingDrive, belt, beltType, beltOrChain,
- *                     "belt/chain type", belt_chain, cambelt, chainType
- *   official interval — officialInterval, official_interval, interval, beltInterval,
- *                     serviceInterval, replacementInterval, "official interval"
- *                     as text, or { years, miles, kilometres, km, text, note }
- *   known issues    — knownIssues, known_issues, issues, "known issues"
- *                     string, string[], or [{note,text,issue}]
- *   confidence      — confidence, status, verification, verified
- *                     verified | needs-Ethan-check | needs_ethan_check | unverified |
- *                     pending | needs-check | true/false
- *   source          — source, sources, citation, citations, url
+ * Accepted input variants (see also earlier loader notes):
+ *   make, manufacturer, brand
+ *   model, modelName, name
+ *   years / yearFrom+yearTo / yearRange
+ *   engine (short matcher, e.g. "1.0 ecoboost"), engineLabel (display),
+ *     engineSize, engines, displacement, or { size, litres, cc, name, code }
+ *   fuel, fuels, fuelType
+ *   timingType, timingConfidence, timing, belt, cambelt, …
+ *   interval / officialInterval, with optional interval.confidence
+ *   knownIssues / issues: string or { issue, note, text, detail, confidence, source }
+ *   questions: { text, why, confidence, source }
+ *   confidence, reviewStatus
  *
- * Document wrappers accepted: an array, or { entries|items|records|knowledge|kb: [] }.
- *
- * Missing confidence is treated as 'needs-Ethan-check' (never shown as verified).
+ * Document wrappers accepted: a top-level array, or { entries|items|records|knowledge|kb: [] }.
  */
 
 import { normaliseMake, normaliseFuel } from './parse.js';
@@ -61,6 +62,17 @@ const CONFIDENCE_PENDING = new Set([
   'placeholder',
   'false',
   'no',
+]);
+
+const DIESEL_TOKENS = /\b(tdci|tdi|tdi2|hdi|bluehdi|cdti|dci|crdi|ecoblue|duratorq|skyactiv-?d|multijet|jtd|tdci)\b/i;
+const PETROL_TOKENS = /\b(ecoboost|tsi|tfsi|vti|thp|tce|puretech|ti-?vct|duratec|gdi|mpi|skyactiv-?g|ecotec|multiair)\b/i;
+const HYBRID_TOKENS = /\b(hybrid|mhev|ihev)\b/i;
+const PHEV_TOKENS = /\b(phev|plug[-\s]?in)\b/i;
+
+/** Tokens that signal fuel, not an engine family, for matching. */
+const FUEL_ENGINE_TOKENS = new Set([
+  'tdci', 'tdi', 'hdi', 'bluehdi', 'cdti', 'dci', 'crdi', 'ecoblue', 'duratorq',
+  'petrol', 'diesel', 'hybrid', 'phev', 'electric', 'mhev', 'multijet',
 ]);
 
 function pick(obj, names) {
@@ -119,7 +131,6 @@ export function parseEngineSize(raw) {
   let cc = ccMatch ? Number(ccMatch[1]) : null;
   let litres = null;
   const litreMatch = text.match(/\b(\d(?:\.\d{1,2})?)\s*(?:l\b|litre|liter)?\b/i);
-  // Prefer an explicit "1.0" / "1.0L" near the start or before a name, not a stray "4x4" etc.
   const dotted = text.match(/\b(\d\.\d{1,2})\b/);
   if (dotted) litres = Number(dotted[1]);
   else if (litreMatch && Number(litreMatch[1]) >= 0.5 && Number(litreMatch[1]) <= 8) litres = Number(litreMatch[1]);
@@ -129,9 +140,10 @@ export function parseEngineSize(raw) {
 }
 
 const GENERIC_ENGINE_TOKENS = new Set([
-  'l', 'litre', 'litres', 'liter', 'cc', 'engine', 'petrol', 'diesel', 'hybrid',
-  'phev', 'electric', 'tdi', 'tsi', 'tfsi', 'tdci', 'cdti', 'hdi', 'dci', 'gdi',
-  'mpi', 'i', 'v6', 'v8', 'v4', 'turbo', 'twin', 'eco',
+  'l', 'litre', 'litres', 'liter', 'cc', 'engine',
+  'petrol', 'diesel', 'hybrid', 'phev', 'electric',
+  'turbo', 'twin', 'eco', 'cyl', 'cylinder',
+  'i', 'v6', 'v8', 'v4',
 ]);
 
 export function tokeniseEngine(text) {
@@ -140,56 +152,64 @@ export function tokeniseEngine(text) {
     .replace(/[+/_,]/g, ' ')
     .split(/[^a-z0-9.]+/)
     .map((t) => t.trim())
-    .filter((t) => t && !GENERIC_ENGINE_TOKENS.has(t) && !/^\d+(?:\.\d+)?$/.test(t));
+    .filter((t) => t && !GENERIC_ENGINE_TOKENS.has(t) && !/^\d+(?:\.\d+)?$/.test(t) && !FUEL_ENGINE_TOKENS.has(t));
 }
 
 export function normaliseEngine(value) {
-  if (value == null || value === '') return { raw: '', litres: null, cc: null, tokens: [] };
+  if (value == null || value === '') return { raw: '', litres: null, cc: null, tokens: [], matcher: '', label: '' };
   if (Array.isArray(value)) return normaliseEngine(value[0]);
   if (typeof value === 'number' && Number.isFinite(value)) {
     const litres = value > 20 ? Math.round((value / 1000) * 10) / 10 : value;
     const cc = value > 20 ? Math.round(value) : Math.round(value * 1000);
-    return { raw: String(value), litres, cc, tokens: [] };
+    const raw = String(value);
+    return { raw, litres, cc, tokens: [], matcher: raw.toLowerCase(), label: raw };
   }
   if (typeof value === 'object') {
-    const raw = asString(pick(value, ['raw', 'name', 'label', 'text', 'code', 'description', 'engine']))
+    const raw = asString(pick(value, ['raw', 'matcher', 'name', 'label', 'text', 'code', 'description', 'engine']))
       || [value.size, value.litres, value.litre, value.cc, value.name, value.code].filter((x) => x != null).join(' ');
     const parsed = parseEngineSize(raw || '');
     const litres = Number(pick(value, ['litres', 'litre', 'size', 'l'])) || parsed.litres;
     const cc = Number(pick(value, ['cc', 'cm3', 'capacity'])) || parsed.cc;
     const tokens = [
       ...parsed.tokens,
-      ...tokeniseEngine(asString(pick(value, ['name', 'code', 'family', 'variant'])) || ''),
+      ...tokeniseEngine(asString(pick(value, ['name', 'code', 'family', 'variant', 'matcher'])) || ''),
     ];
+    const matcher = (asString(pick(value, ['matcher', 'raw', 'engine'])) || parsed.raw || '').toLowerCase();
     return {
       raw: raw || parsed.raw,
       litres: Number.isFinite(litres) && litres < 20 ? Number(litres) : parsed.litres,
       cc: Number.isFinite(cc) && cc >= 100 ? Number(cc) : parsed.cc,
       tokens: [...new Set(tokens)],
+      matcher,
+      label: asString(pick(value, ['label', 'engineLabel'])) || raw || parsed.raw,
     };
   }
-  return parseEngineSize(String(value));
+  const parsed = parseEngineSize(String(value));
+  return { ...parsed, matcher: String(value).trim().toLowerCase(), label: String(value).trim() };
 }
 
 export function normaliseTimingType(value) {
   const s = asString(value)?.toLowerCase() ?? '';
   if (!s) return 'unknown';
-  if (/(wet\s*belt|belt[-\s]?in[-\s]?oil|bio|oil[-\s]?belt)/.test(s)) return 'belt-in-oil';
+  if (/(wet[-\s]*belt|belt[-\s]?in[-\s]?oil|bio|oil[-\s]?belt)/.test(s)) return 'belt-in-oil';
   if (/(timing\s*)?chain/.test(s)) return 'chain';
-  if (/(cambelt|cam\s*belt|timing\s*belt|dry\s*belt|\bbelt\b)/.test(s)) return 'belt';
+  if (/(cambelt|cam\s*belt|timing\s*belt|dry[-\s]*belt|\bbelt\b)/.test(s)) return 'belt';
   if (/(none|n\/a|not\s*applicable|electric)/.test(s)) return 'none';
+  if (s === 'unknown' || s === 'unsure') return 'unknown';
   return 'unknown';
 }
 
 export function normaliseInterval(value) {
-  const empty = { years: null, miles: null, text: null };
+  const empty = { years: null, miles: null, text: null, confidence: 'needs-Ethan-check', note: null };
   if (value == null || value === '') return empty;
   if (typeof value === 'object' && !Array.isArray(value)) {
     const years = Number(pick(value, ['years', 'year', 'y']));
     let miles = Number(pick(value, ['miles', 'mile', 'mi']));
     const km = Number(pick(value, ['kilometres', 'kilometers', 'km']));
     if (!Number.isFinite(miles) && Number.isFinite(km)) miles = Math.round(km * 0.621371);
-    const text = asString(pick(value, ['text', 'note', 'label', 'display', 'official']))
+    const confidence = normaliseConfidence(pick(value, ['confidence', 'status', 'verified']));
+    const note = asString(pick(value, ['note', 'warning']));
+    const text = asString(pick(value, ['text', 'label', 'display', 'official']))
       || formatIntervalText({
         years: Number.isFinite(years) ? years : null,
         miles: Number.isFinite(miles) ? miles : null,
@@ -198,6 +218,8 @@ export function normaliseInterval(value) {
       years: Number.isFinite(years) ? years : null,
       miles: Number.isFinite(miles) ? miles : null,
       text: text || null,
+      confidence,
+      note,
     };
   }
   const text = String(value).trim();
@@ -207,12 +229,11 @@ export function normaliseInterval(value) {
   const y = years ? Number(years[1]) : null;
   let m = miles ? Number(String(miles[1]).replace(/,/g, '')) : null;
   if (m == null && km) m = Math.round(Number(String(km[1]).replace(/,/g, '')) * 0.621371);
-  return { years: y, miles: m, text };
+  return { years: y, miles: m, text, confidence: 'needs-Ethan-check', note: null };
 }
 
 export function formatIntervalText(interval) {
   if (!interval) return '';
-  if (interval.text && (interval.years != null || interval.miles != null) === false) return interval.text;
   const bits = [];
   if (interval.years != null) bits.push(`${interval.years} year${interval.years === 1 ? '' : 's'}`);
   if (interval.miles != null) bits.push(`${Math.round(interval.miles).toLocaleString('en-GB')} miles`);
@@ -229,14 +250,94 @@ export function normaliseConfidence(value) {
   return 'needs-Ethan-check';
 }
 
+export function isVerified(confidence) {
+  return normaliseConfidence(confidence) === 'verified';
+}
+
+/**
+ * TDCi / HDi / TDI (and similar) resolve to diesel so a 1.6 VTi petrol
+ * listing is not matched to a 1.6 diesel row.
+ */
+export function inferFuelFromText(text) {
+  const s = String(text ?? '');
+  if (!s.trim()) return null;
+  if (PHEV_TOKENS.test(s)) return 'phev';
+  if (DIESEL_TOKENS.test(s)) return 'diesel';
+  if (HYBRID_TOKENS.test(s) && !/petrol/.test(s.toLowerCase())) return 'hybrid';
+  const named = normaliseFuel(s);
+  if (named) return named;
+  if (PETROL_TOKENS.test(s)) return 'petrol';
+  return null;
+}
+
+export function fuelList(fuel, engineText) {
+  if (fuel == null || fuel === '') {
+    const inf = inferFuelFromText(engineText);
+    return inf ? [inf] : [];
+  }
+  const raw = String(fuel).trim().toLowerCase();
+  if (raw === 'any' || raw === 'all' || raw === '*') return [];
+  if (raw.includes('/')) {
+    return raw.split('/').map((p) => normaliseFuel(p.trim()) || inferFuelFromText(p) || null).filter(Boolean);
+  }
+  const n = normaliseFuel(raw) || inferFuelFromText(raw);
+  return n ? [n] : [];
+}
+
+export function fuelsMatch(listing, entry) {
+  const listingFuels = fuelList(
+    listing.fuel,
+    typeof listing.engine === 'string' ? listing.engine : (listing.engine?.raw || listing.engine?.matcher || ''),
+  );
+  const entryFuels = entry.fuels || fuelList(entry.fuel, entry.engine?.matcher || entry.engine?.raw || '');
+  if (!listingFuels.length || !entryFuels.length) return true;
+  return listingFuels.some((f) => entryFuels.includes(f));
+}
+
 export function normaliseIssues(value) {
   if (value == null || value === '') return [];
   const list = Array.isArray(value) ? value : [value];
   return list
     .map((item) => {
-      if (typeof item === 'string') return item.trim();
-      if (item && typeof item === 'object') return asString(pick(item, ['note', 'text', 'issue', 'title', 'summary'])) || '';
-      return '';
+      if (typeof item === 'string') {
+        const note = item.trim();
+        return note ? { note, detail: null, confidence: 'needs-Ethan-check', source: null } : null;
+      }
+      if (item && typeof item === 'object') {
+        const note = asString(pick(item, ['note', 'issue', 'text', 'title', 'summary'])) || '';
+        if (!note) return null;
+        return {
+          note,
+          detail: asString(pick(item, ['detail', 'why', 'description', 'body'])) || null,
+          confidence: normaliseConfidence(pick(item, ['confidence', 'status', 'verified'])),
+          source: asString(Array.isArray(item.sources) ? item.sources[0] : pick(item, ['source', 'url'])) || null,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+export function normaliseQuestions(value) {
+  if (value == null || value === '') return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((item) => {
+      if (typeof item === 'string') {
+        const text = item.trim();
+        return text ? { text, why: null, confidence: 'needs-Ethan-check', source: null } : null;
+      }
+      if (item && typeof item === 'object') {
+        const text = asString(pick(item, ['text', 'question', 'body'])) || '';
+        if (!text) return null;
+        return {
+          text,
+          why: asString(pick(item, ['why', 'reason', 'detail'])) || null,
+          confidence: normaliseConfidence(pick(item, ['confidence', 'status', 'verified'])),
+          source: asString(Array.isArray(item.sources) ? item.sources[0] : pick(item, ['source', 'url'])) || null,
+        };
+      }
+      return null;
     })
     .filter(Boolean);
 }
@@ -258,12 +359,20 @@ export function normaliseKbEntry(raw) {
   const engine = normaliseEngine(
     pick(raw, ['engine', 'engineSize', 'engine_size', 'engines', 'displacement', 'capacity']),
   );
+  const engineLabel = asString(pick(raw, ['engineLabel', 'engine_label', 'engineDescription'])) || engine.label;
+  engine.label = engineLabel || engine.label;
+  const fuelRaw = pick(raw, ['fuel', 'fuels', 'fuelType', 'fuel_type']);
+  const fuels = fuelList(fuelRaw, engine.matcher || engine.raw);
+  const fuel = fuels.length === 1 ? fuels[0] : (normaliseFuel(fuelRaw) || null);
   const timingType = normaliseTimingType(
     pick(raw, [
       'timingType', 'timing_type', 'timing', 'timingDrive', 'timing_drive',
       'belt', 'beltType', 'belt_type', 'beltOrChain', 'belt_or_chain',
       'belt/chain type', 'belt_chain', 'cambelt', 'chainType', 'chain_type',
     ]),
+  );
+  const timingConfidence = normaliseConfidence(
+    pick(raw, ['timingConfidence', 'timing_confidence', 'timingVerified']),
   );
   const interval = normaliseInterval(
     pick(raw, [
@@ -275,8 +384,10 @@ export function normaliseKbEntry(raw) {
   const knownIssues = normaliseIssues(
     pick(raw, ['knownIssues', 'known_issues', 'known issues', 'issues']),
   );
+  const questions = normaliseQuestions(pick(raw, ['questions', 'modelQuestions']));
   const confidence = normaliseConfidence(pick(raw, ['confidence', 'status', 'verification', 'verified']));
-  const sourceVal = pick(raw, ['source', 'sources', 'citation', 'citations', 'url']);
+  const reviewStatus = asString(pick(raw, ['reviewStatus', 'review_status']));
+  const sourceVal = pick(raw, ['source', 'sources', 'citation', 'citations', 'url', 'timingSource']);
   const source = Array.isArray(sourceVal)
     ? sourceVal.map(asString).filter(Boolean).join('; ')
     : asString(sourceVal);
@@ -285,13 +396,19 @@ export function normaliseKbEntry(raw) {
     make: make ? (make.charAt(0).toUpperCase() + make.slice(1)) : null,
     makeKey: make ? normaliseMake(make) : null,
     model,
+    generation: asString(pick(raw, ['generation', 'gen'])) || null,
     yearFrom: years.yearFrom,
     yearTo: years.yearTo,
     engine,
+    fuel,
+    fuels,
     timingType,
+    timingConfidence,
     interval,
     knownIssues,
+    questions,
     confidence,
+    reviewStatus,
     source,
     placeholder: raw.placeholder === true,
     raw,
@@ -311,17 +428,14 @@ export function loadKb(doc) {
 
 export function sizesClose(a, b) {
   if (a == null || b == null) return false;
-  // 999cc vs 1.0L, 1498cc vs 1.5L, etc.
   return Math.abs(a - b) <= 80;
 }
 
 /**
- * Never-guess engine match.
- * - Listing with no engine → no match.
- * - Size must match (litres to 1 decimal, or cc within 80cc).
- * - If the KB engine has distinctive name tokens (e.g. EcoBoost), the listing
- *   string must include them. A bare "1.0" does not match "1.0 EcoBoost".
- * - If the KB engine is size-only, a listing with the same size matches.
+ * Engine match against the short matcher string (e.g. "1.0 ecoboost").
+ * Size must match. Conflicting family tokens (EcoBoost vs Duratec) do not match.
+ * A bare size like "1.0" is allowed to match all same-size rows of the same fuel;
+ * callers then apply the timing-disagreement fallback. Fuel is matched separately.
  */
 export function enginesMatch(listingEngine, kbEngine) {
   const listing = normaliseEngine(listingEngine);
@@ -332,12 +446,17 @@ export function enginesMatch(listingEngine, kbEngine) {
       if (Math.abs(listing.litres - kb.litres) < 0.05) return true;
     }
     if (listing.cc != null && kb.cc != null && sizesClose(listing.cc, kb.cc)) return true;
+    const lm = (listing.matcher || listing.raw || '').toLowerCase();
+    const km = (kb.matcher || kb.raw || '').toLowerCase();
+    if (lm && km && (lm === km || lm.includes(km) || km.includes(lm))) return true;
     return false;
   })();
   if (!sizeOk) return false;
-  if (kb.tokens.length === 0) return true;
-  if (listing.tokens.length === 0) return false;
-  return kb.tokens.every((t) => listing.tokens.includes(t) || listing.raw.toLowerCase().includes(t));
+  if (listing.tokens.length && kb.tokens.length) {
+    const overlap = listing.tokens.some((t) => kb.tokens.includes(t) || (kb.matcher || '').includes(t));
+    if (!overlap) return false;
+  }
+  return true;
 }
 
 export function yearsMatch(year, entry) {
@@ -346,39 +465,94 @@ export function yearsMatch(year, entry) {
   return y >= entry.yearFrom && y <= entry.yearTo;
 }
 
-export function makeModelMatch(listing, entry) {
-  const listingMake = listing.make ? normaliseMake(listing.make) : (listing.modelObj ? normaliseMake(listing.modelObj.make) : null);
-  const listingModel = String(listing.model ?? listing.modelObj?.model ?? '')
+function normModelName(s) {
+  return String(s ?? '')
     .toLowerCase()
     .replace(/[^\w-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const entryMake = entry.makeKey;
-  const entryModel = String(entry.model)
-    .toLowerCase()
-    .replace(/[^\w-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!listingModel || !entryModel) return false;
-  if (entryMake && listingMake && entryMake !== listingMake) return false;
-  return listingModel === entryModel || listingModel.startsWith(`${entryModel} `) || entryModel.startsWith(`${listingModel} `);
 }
 
 /**
- * Find KB entries that match make+model+year-range+engine.
- * Unverified entries are excluded unless includeUnverified is true (review flag).
+ * Entry model may be a platform alias ("Focus / Kuga", "MINI Hatch (Cooper)").
  */
-export function findKbMatches(listing, kb, { includeUnverified = false } = {}) {
+export function makeModelMatch(listing, entry) {
+  const listingMake = listing.make ? normaliseMake(listing.make) : (listing.modelObj ? normaliseMake(listing.modelObj.make) : null);
+  const listingModel = normModelName(listing.model ?? listing.modelObj?.model ?? '');
+  const entryMake = entry.makeKey;
+  if (!listingModel) return false;
+  if (entryMake && listingMake && entryMake !== listingMake) {
+    // Platform rows can list two makes, e.g. "Skoda / VW / Audi"
+    const entryMakes = String(entry.make || '')
+      .split('/')
+      .map((p) => normaliseMake(p.trim()))
+      .filter(Boolean);
+    if (!entryMakes.includes(listingMake) && entryMakes.length) return false;
+    if (!entryMakes.length) return false;
+  }
+  const rawModel = String(entry.model || '');
+  const candidates = rawModel
+    .split('/')
+    .map((part) => normModelName(part.replace(/\(.*$/, '')))
+    .filter(Boolean);
+  const full = normModelName(rawModel.replace(/\(.*$/, ''));
+  if (full) candidates.push(full);
+  return candidates.some((entryModel) => {
+    if (!entryModel) return false;
+    return listingModel === entryModel
+      || listingModel.startsWith(`${entryModel} `)
+      || entryModel.startsWith(`${listingModel} `)
+      || entryModel.includes(listingModel)
+      || listingModel.includes(entryModel);
+  });
+}
+
+/**
+ * Prefer rows whose family tokens appear in the listing (e.g. "1.0 EcoBoost"
+ * keeps the EcoBoost row and drops a bare "1.0" petrol row if both matched).
+ */
+export function refineEngineMatches(listing, matches) {
+  const tokens = normaliseEngine(listing.engine).tokens;
+  if (!tokens.length || matches.length < 2) return matches;
+  const specific = matches.filter((m) => {
+    const kt = m.engine?.tokens || [];
+    return kt.length && tokens.some((t) => kt.includes(t) || (m.engine?.matcher || '').includes(t));
+  });
+  return specific.length ? specific : matches;
+}
+
+/**
+ * True when matched rows disagree on a known timing type
+ * (e.g. 2014 Polo 1.2 chain vs belt). Unknowns are ignored.
+ */
+export function timingTypesConflict(matches) {
+  const types = new Set(
+    (matches || []).map((m) => m.timingType).filter((t) => t && t !== 'unknown'),
+  );
+  return types.size > 1;
+}
+
+/**
+ * Find KB rows that match make + model + year-range + engine + fuel.
+ * Entry-level confidence is ignored (it stays 'needs-Ethan-check' until Ethan
+ * signs the row off). Callers filter individual facts by per-fact confidence.
+ */
+export function findKbMatches(listing, kb, { includeUnverified = true } = {}) {
   const entries = Array.isArray(kb) ? kb : (kb?.entries ?? []);
   const matches = [];
   for (const entry of entries) {
     if (!makeModelMatch(listing, entry)) continue;
     if (!yearsMatch(listing.year, entry)) continue;
     if (!enginesMatch(listing.engine, entry.engine)) continue;
-    if (entry.confidence !== 'verified' && !includeUnverified) continue;
+    if (!fuelsMatch(listing, entry)) continue;
+    // includeUnverified kept for backward compat; entry-level confidence is
+    // not used as a gate. Review mode still exists for per-fact filtering.
+    if (!includeUnverified && entry.confidence === 'verified' && !entry.questions?.length && !entry.knownIssues?.length) {
+      // no-op; we always include identity matches
+    }
     matches.push(entry);
   }
-  return matches;
+  return refineEngineMatches(listing, matches);
 }
 
 export { normaliseFuel };

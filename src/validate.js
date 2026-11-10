@@ -30,7 +30,6 @@ export const MODEL_REQUIRED = Object.freeze([
   'segment',
   'bodyType',
   'fuels',
-  'refPrice',
   'refAge',
   'refMiles',
   'curveId',
@@ -169,16 +168,33 @@ export function validateModels(modelsDoc, segmentIds) {
         if (!ALLOWED_FUELS.includes(f)) err(errors, `${p}.fuels[${j}]`, `unknown fuel "${f}"`);
       });
     }
-    if (typeof model.refPrice !== 'number' || !Number.isFinite(model.refPrice) || model.refPrice <= 0) {
-      err(errors, `${p}.refPrice`, 'must be a positive number (GBP)');
+    const isPlaceholder = model.placeholder === true;
+    if (typeof model.placeholder !== 'boolean') {
+      err(errors, `${p}.placeholder`, 'must be a boolean');
+    }
+    const hasPrice = typeof model.refPrice === 'number' && Number.isFinite(model.refPrice) && model.refPrice > 0;
+    if (!isPlaceholder) {
+      if (!hasPrice) err(errors, `${p}.refPrice`, 'must be a positive number (GBP) once the row is no longer a placeholder');
+      if (model.ethanChecked !== true) {
+        err(errors, `${p}.ethanChecked`, 'must be true when placeholder is false');
+      }
+      if (typeof model.baseDate !== 'string' || !/^\d{4}-\d{2}$/.test(model.baseDate)) {
+        err(errors, `${p}.baseDate`, 'must be YYYY-MM when the price has been set');
+      }
+    } else if (model.refPrice != null && model.refPrice !== '' && !hasPrice) {
+      err(errors, `${p}.refPrice`, 'must be a positive number (GBP) when present');
+    }
+    if (model.ethanChecked != null && typeof model.ethanChecked !== 'boolean') {
+      err(errors, `${p}.ethanChecked`, 'must be a boolean when present');
+    }
+    if (model.ethanChecked === true && isPlaceholder) {
+      err(errors, `${p}.ethanChecked`, 'a checked price cannot stay flagged as placeholder');
+    }
+    if (model.baseDate != null && (typeof model.baseDate !== 'string' || !/^\d{4}-\d{2}$/.test(model.baseDate))) {
+      err(errors, `${p}.baseDate`, 'must be YYYY-MM when present');
     }
     if (model.refAge !== 3) err(errors, `${p}.refAge`, 'v1 reference age must be 3');
     if (model.refMiles !== 30000) err(errors, `${p}.refMiles`, 'v1 reference mileage must be 30000');
-    if (typeof model.placeholder !== 'boolean') {
-      err(errors, `${p}.placeholder`, 'must be a boolean');
-    } else if (model.placeholder !== true && modelsDoc.placeholder === true) {
-      err(errors, `${p}.placeholder`, 'seed is still flagged as placeholder overall, but this row is not');
-    }
     if (typeof model.curveId !== 'string') {
       err(errors, `${p}.curveId`, 'must be a string');
     } else if (allowedCurves && !allowedCurves.has(model.curveId)) {
@@ -186,6 +202,16 @@ export function validateModels(modelsDoc, segmentIds) {
     }
     checkKnownIssues(errors, p, model.knownIssues);
   });
+  const anyPlaceholder = list.some((m) => m && m.placeholder === true);
+  const allChecked = list.length > 0 && list.every((m) => m && m.placeholder === false);
+  if (typeof modelsDoc.placeholder === 'boolean') {
+    if (anyPlaceholder && modelsDoc.placeholder !== true) {
+      err(errors, 'models.placeholder', 'must be true while any model row is still a placeholder');
+    }
+    if (allChecked && modelsDoc.placeholder !== false) {
+      err(errors, 'models.placeholder', 'must be false once every model row has a checked price');
+    }
+  }
   return { ok: errors.length === 0, errors, ids: [...ids] };
 }
 
