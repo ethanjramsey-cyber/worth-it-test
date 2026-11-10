@@ -1,4 +1,4 @@
-import { APP_URL, WORKER_URL, EXTRACT_PATH, PARSE_PATH } from './src/config.js';
+import { APP_URL, WORKER_URL, EXTRACT_PATH, PARSE_PATH, VEHICLE_PATH } from './src/config.js';
 import { checkListing, formatGbp, formatMiles, CONFIG } from './src/score.js';
 import { datasetFreshness, datasetHasDrafts, datasetHasPlaceholders, isDraftModel, isPlaceholderModel } from './src/priceSource.js';
 import { buildCardModel, shareText, challengeLinkFor, renderShareCardPng, renderBothCards, shareOrDownload, downloadBlob, CARD_SIZES } from './src/shareCard.js';
@@ -6,6 +6,8 @@ import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.
 import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
 import { parseChallengeParams, buildChallengeUrl, challengeUrlForDisplay } from './src/url.js';
 import { buildConfirmState } from './src/confirm.js';
+import { mergePlateAndListing, motSummaryLine } from './src/vehicleInsights.js';
+import { vehicleCardHtml } from './src/vehicleView.js';
 import { initAnalytics, getRef, track } from './src/analytics.js';
 import { garageQuestions, formatQuestionsText, REVIEW_BADGE, loadGenericQuestions } from './src/questions.js';
 import { loadKb } from './src/kb.js';
@@ -73,6 +75,12 @@ const els = {
   screenshotField: $('screenshot-field'),
   listingScreenshot: $('listing-screenshot'),
   screenshotStatus: $('screenshot-status'),
+  plateLookup: $('plate-lookup'),
+  vehicleReg: $('vehicle-reg'),
+  lookupPlateBtn: $('lookup-plate-btn'),
+  plateStatus: $('plate-status'),
+  vehicleCard: $('vehicle-card'),
+  resultMot: $('result-mot'),
 };
 
 let models = [];
@@ -85,6 +93,8 @@ let lastListingIdentity = { make: null, model: null, year: null };
 let lastQuestions = null;
 let lastListing = null;
 let lastResult = null;
+let lastVehicle = null;
+let lastListingExtract = null;
 let deferredInstall = null;
 const CHECKS_KEY = 'worthit-check-count';
 const INSTALL_DISMISS_KEY = 'worthit-install-dismissed';
@@ -398,7 +408,10 @@ function applyParsedText(text) {
   // Prefill whatever was found even when mileage or price is missing.
   const any = parsed.year || parsed.mileage != null || parsed.price != null || parsed.fuel || parsed.gearbox || parsed.engine || parsed.make || parsed.model;
   const confirmInput = listingFromParsed(parsed);
-  if (any) {
+  lastListingExtract = confirmInput;
+  if (lastVehicle && any) {
+    confirmFromVehicle(lastVehicle, confirmInput, { statusEl: pasteStatus });
+  } else if (any) {
     renderConfirm(confirmInput, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
   }
 
@@ -422,7 +435,12 @@ function applyParsedText(text) {
       return;
     }
     const merged = mergeMissingListingFields(confirmInput, data, 'ai-pasted-text');
+    lastListingExtract = merged;
     fillFormFromExtracted(merged, { onlyMissing: true });
+    if (lastVehicle) {
+      confirmFromVehicle(lastVehicle, merged, { statusEl: pasteStatus });
+      return;
+    }
     const maybe = selectedModel || matchModelFromText(text, merged);
     const stillUnmatched = unmatchedModelMessage(merged, maybe);
     renderConfirm(merged, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
@@ -639,8 +657,22 @@ function renderResult(input, result) {
     { kb, generic: genericQuestions, now: NOW, review: reviewMode },
   );
   lastQuestions = q;
-  lastListing = input;
+  lastListing = {
+    ...input,
+    motSummary: lastVehicle ? motSummaryLine(lastVehicle) : '',
+    vehicle: lastVehicle,
+  };
   lastResult = result;
+  if (els.resultMot) {
+    const line = lastListing.motSummary;
+    if (line) {
+      els.resultMot.hidden = false;
+      els.resultMot.textContent = line;
+    } else {
+      els.resultMot.hidden = true;
+      els.resultMot.textContent = '';
+    }
+  }
   if (els.shareBtn) {
     els.shareBtn.disabled = false;
     els.shareBtn.hidden = false;
@@ -736,11 +768,20 @@ function extractEndpoint() {
   return `${base}${EXTRACT_PATH}`;
 }
 
+function vehicleEndpoint() {
+  if (!WORKER_URL) return null;
+  const base = WORKER_URL.replace(/\/+$/, '');
+  return `${base}${VEHICLE_PATH}`;
+}
+
 if (extractEndpoint()) {
   els.urlImport.hidden = false;
 }
 if (parseEndpoint() && els.screenshotField) {
   els.screenshotField.hidden = false;
+}
+if (vehicleEndpoint() && els.plateLookup) {
+  els.plateLookup.hidden = false;
 }
 
 els.listingScreenshot?.addEventListener('change', () => {
@@ -801,6 +842,11 @@ async function handleScreenshot(file) {
     const got = keys.filter((k) => data[k] != null && data[k] !== '');
     if (!got.length) {
       showStatus(status, data.message || "Couldn't read the details. Enter them yourself.", 'err');
+      return;
+    }
+    lastListingExtract = data;
+    if (lastVehicle) {
+      confirmFromVehicle(lastVehicle, data, { statusEl: status });
       return;
     }
     fillFormFromExtracted(data, { onlyMissing: true });
@@ -874,6 +920,11 @@ async function fetchListingUrl() {
       return;
     }
     applyExtracted(data);
+    lastListingExtract = data;
+    if (lastVehicle) {
+      confirmFromVehicle(lastVehicle, data, { statusEl: els.urlStatus });
+      return;
+    }
     const confirmData = {
       ...data,
       make: data.make || selectedModel?.make || null,
@@ -922,6 +973,84 @@ els.confirmBtn.addEventListener('click', () => {
 els.confirmCancel.addEventListener('click', () => {
   hideConfirm();
   showStatus(els.urlStatus, 'No problem — edit the boxes or paste the listing text instead.', '');
+  showStatus(els.plateStatus, '', '');
+});
+
+function confirmFromVehicle(vehicle, listing, { statusEl, okMessage } = {}) {
+  const merged = mergePlateAndListing(vehicle, listing);
+  lastVehicle = vehicle;
+  fillFormFromExtracted(merged, { onlyMissing: false });
+  if (merged.mileage != null) els.mileage.value = merged.mileage;
+  if (merged.year) els.year.value = merged.year;
+  if (merged.price != null) els.asking.value = merged.price;
+  renderConfirm(merged, { defaultSource: 'plate', defaultConfidence: 0.9 });
+  const unmatched = unmatchedModelMessage(merged, matchModel(merged.make, merged.model, models));
+  const warnings = [...(merged.warnings || [])];
+  if (unmatched) warnings.push(unmatched);
+  if (statusEl) {
+    if (warnings.length) showStatus(statusEl, warnings.join(' '), 'err');
+    else showStatus(statusEl, okMessage || 'Have a look below — is this right? Enter the asking price, and the current mileage if it has moved on since the last MOT.', 'ok');
+  }
+  return merged;
+}
+
+function renderVehicleCard(vehicle, sources) {
+  if (!els.vehicleCard) return;
+  if (!vehicle) {
+    els.vehicleCard.hidden = true;
+    els.vehicleCard.innerHTML = '';
+    return;
+  }
+  els.vehicleCard.hidden = false;
+  els.vehicleCard.innerHTML = vehicleCardHtml(vehicle, { sources, now: NOW });
+}
+
+async function lookupPlate() {
+  const endpoint = vehicleEndpoint();
+  const raw = (els.vehicleReg?.value || '').trim();
+  if (!endpoint) {
+    showStatus(els.plateStatus, "Plate lookup isn't available just now. Enter the details yourself.", 'err');
+    return;
+  }
+  if (!raw) {
+    showStatus(els.plateStatus, 'Enter a UK number plate first.', 'err');
+    return;
+  }
+  if (els.lookupPlateBtn) els.lookupPlateBtn.disabled = true;
+  showStatus(els.plateStatus, 'Looking up the official record…', '');
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reg: raw }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.status === 429 || data?.error === 'rate-limit') {
+      showStatus(els.plateStatus, data?.message || "We've had a lot of plate lookups just now. Try again in a few minutes, or enter the details yourself.", 'err');
+      return;
+    }
+    if (!data || data.ok === false) {
+      showStatus(els.plateStatus, data?.message || "Couldn't find that registration. Enter the details yourself.", 'err');
+      return;
+    }
+    renderVehicleCard(data, data.sources);
+    confirmFromVehicle(data, lastListingExtract, {
+      statusEl: els.plateStatus,
+      okMessage: 'Have a look below — official details are filled in. Enter the asking price, and the current mileage if it has moved on since the last MOT.',
+    });
+  } catch {
+    showStatus(els.plateStatus, "Couldn't reach the lookup service. Enter the details yourself.", 'err');
+  } finally {
+    if (els.lookupPlateBtn) els.lookupPlateBtn.disabled = false;
+  }
+}
+
+els.lookupPlateBtn?.addEventListener('click', () => lookupPlate());
+els.vehicleReg?.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    lookupPlate();
+  }
 });
 
 function applyDataLabels(modelList, index) {

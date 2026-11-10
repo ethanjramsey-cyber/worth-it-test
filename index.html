@@ -26,6 +26,19 @@
     </header>
 
     <main id="tab-check" class="panel">
+      <section id="plate-lookup" class="card plate-lookup" hidden>
+        <h2>Enter number plate</h2>
+        <label class="field">
+          <span>Number plate</span>
+          <input id="vehicle-reg" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="10" placeholder="e.g. AB12 CDE">
+        </label>
+        <p class="hint privacy-note">The plate is sent to our lookup service to fetch official vehicle data. It is not stored.</p>
+        <button type="button" id="lookup-plate-btn" class="btn primary">Look up this plate</button>
+        <p id="plate-status" class="status" hidden></p>
+      </section>
+
+      <section id="vehicle-card" class="card vehicle-card" hidden></section>
+
       <section id="url-import" class="card" hidden>
         <h2 class="sr-only">Paste a listing link</h2>
         <label class="field">
@@ -123,6 +136,7 @@
         <p id="result-range" class="range"></p>
         <p id="result-delta" class="delta"></p>
         <p id="result-car" class="result-car"></p>
+        <p id="result-mot" class="result-mot" hidden></p>
 
         <div class="result-actions">
           <button type="button" id="share-btn" class="btn primary" hidden>Share</button>
@@ -145,6 +159,10 @@
       </section>
 
       <p id="disclaimer" class="disclaimer">Estimates, not a valuation. Figures come from a placeholder dataset until Ethan reviews them.</p>
+      <footer class="app-footer">
+        <p id="ogl-attribution" class="disclaimer ogl-line">Contains public sector information licensed under the Open Government Licence v3.0.</p>
+        <p class="disclaimer ogl-line">Worth It? is not affiliated with or endorsed by DVLA or DVSA.</p>
+      </footer>
     </main>
 
     <section id="tab-best" class="panel" hidden>

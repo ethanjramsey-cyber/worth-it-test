@@ -511,3 +511,159 @@ a.bookmarklet { text-decoration: none; }
   color: var(--text);
   font-weight: 600;
 }
+
+
+/* Number plate lookup and official vehicle card */
+.plate-lookup h2,
+.vehicle-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
+.privacy-note { margin-top: -4px; }
+.vehicle-title { letter-spacing: -0.02em; }
+.vehicle-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.vehicle-card .badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.vehicle-card .badge.is-ok {
+  background: var(--green-dim);
+  color: var(--green);
+  border-color: rgba(61, 214, 140, 0.35);
+}
+.vehicle-card .badge.is-bad {
+  background: var(--red-dim);
+  color: var(--red);
+  border-color: rgba(255, 107, 74, 0.35);
+}
+.vehicle-summary {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.vehicle-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+}
+.vehicle-facts .v-detail { margin: 0; }
+.vehicle-facts dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.vehicle-facts dd { margin: 2px 0 0; font-weight: 650; font-size: 0.95rem; }
+.vehicle-sub {
+  margin: 16px 0 8px;
+  font-size: 0.95rem;
+}
+.vehicle-flags {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.vehicle-flag {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+.vehicle-flag.is-warn {
+  background: #3a2a10;
+  border-color: rgba(245, 166, 35, 0.35);
+  color: #ffd789;
+}
+.vehicle-flag.is-info { color: var(--text); }
+.mileage-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 0 8px;
+}
+.chart-axis { stroke: var(--line); stroke-width: 1; }
+.chart-line { stroke: var(--amber); stroke-width: 2; }
+.chart-dot.is-pass { fill: var(--green); }
+.chart-dot.is-fail { fill: var(--red); }
+.chart-label {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: inherit;
+}
+.chart-empty, .mot-none { color: var(--muted); font-size: 0.85rem; }
+.mot-timeline {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  border-left: 2px solid var(--line);
+}
+.mot-test {
+  margin: 0 0 8px;
+  padding: 0 0 0 14px;
+  position: relative;
+}
+.mot-test::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.mot-test.is-pass::before { background: var(--green); }
+.mot-test.is-fail::before { background: var(--red); }
+.mot-summary, .mot-test summary {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.mot-test details { margin: 0; }
+.defect-list {
+  margin: 8px 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.defect-type {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: var(--bg-elev-2);
+  color: var(--muted);
+}
+.defect-type.defect-advisory { color: var(--amber-bright); background: var(--amber-dim); }
+.defect-type.defect-minor { color: var(--amber-bright); background: var(--amber-dim); }
+.defect-type.defect-major,
+.defect-type.defect-fail,
+.defect-type.defect-dangerous,
+.defect-type.defect-prs { color: var(--red); background: var(--red-dim); }
+.ogl-line { font-size: 0.75rem; }
+.app-footer { margin: 8px 0 16px; }
+#result-mot {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 8px;
+}
