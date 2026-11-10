@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0c0f">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Paste a UK used-car listing and find out if it's worth it. Estimates, not a valuation. Placeholder data until reviewed.">
+  <title>Worth It?</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <p class="banner" role="status">
+        Test build — placeholder prices, not real valuations
+      </p>
+      <div class="brand">
+        <h1>Worth It?</h1>
+        <p class="tag">UK used-car value checker</p>
+      </div>
+    </header>
+
+    <main id="tab-check" class="panel">
+      <section id="url-import" class="card" hidden>
+        <h2 class="sr-only">Paste a listing link</h2>
+        <label class="field">
+          <span>Paste a listing link</span>
+          <input id="listing-url" type="url" inputmode="url" autocomplete="off" placeholder="https://…">
+        </label>
+        <button type="button" id="fetch-url-btn" class="btn secondary">Look up this link</button>
+        <p id="url-status" class="status" hidden></p>
+      </section>
+
+      <p class="import-help-link"><a href="./import-help.html">Can’t paste a link? Use the bookmarklet or paste the listing text.</a></p>
+
+      <section id="confirm" class="card confirm" hidden>
+        <h2>Is this right?</h2>
+        <p class="hint">Have a quick look and fix anything we've got wrong before we score it.</p>
+        <p id="confirm-source" class="hint"></p>
+        <ul id="confirm-fields" class="confirm-fields"></ul>
+        <button type="button" id="confirm-btn" class="btn primary">Looks right — check it</button>
+        <button type="button" id="confirm-cancel" class="btn ghost">Enter the details myself</button>
+      </section>
+
+      <form id="checker-form" class="card" novalidate>
+        <h2 class="sr-only">Check a car</h2>
+        <label class="field">
+          <span>Paste listing text</span>
+          <textarea id="listing-text" rows="3" placeholder="e.g. 2018 Ford Fiesta 1.0 EcoBoost, 42,000 miles, manual, £8,495"></textarea>
+        </label>
+        <p class="hint">We'll fill the boxes if the year, mileage and price are obvious. Unknowns stay blank so you can fill them in. You can always edit them.</p>
+
+        <label class="field" data-field="model">
+          <span>Make &amp; model</span>
+          <input id="model-search" type="search" autocomplete="off" placeholder="Search make or model" aria-autocomplete="list" aria-controls="model-results">
+        </label>
+        <ul id="model-results" class="typeahead" hidden role="listbox"></ul>
+        <p id="model-chosen" class="chosen" hidden></p>
+        <input type="hidden" id="model-id" value="">
+
+        <div class="grid two">
+          <label class="field" data-field="year">
+            <span>Year</span>
+            <input id="year" type="number" inputmode="numeric" min="1990" max="2027" placeholder="2018">
+          </label>
+          <label class="field" data-field="mileage">
+            <span>Mileage</span>
+            <input id="mileage" type="number" inputmode="numeric" min="0" step="1" placeholder="42000">
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field" data-field="engine">
+            <span>Engine</span>
+            <input id="engine" type="text" list="engine-list" placeholder="e.g. 1.0 EcoBoost" autocomplete="off">
+            <datalist id="engine-list"></datalist>
+          </label>
+          <label class="field" data-field="fuel">
+            <span>Fuel</span>
+            <select id="fuel">
+              <option value="">Select</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field" data-field="gearbox">
+            <span>Gearbox</span>
+            <select id="gearbox">
+              <option value="">Select</option>
+              <option value="manual">Manual</option>
+              <option value="auto">Automatic</option>
+            </select>
+          </label>
+          <label class="field" data-field="price">
+            <span>Asking price (£)</span>
+            <input id="asking" type="number" inputmode="decimal" min="0" step="1" placeholder="8495">
+          </label>
+        </div>
+
+        <p id="form-error" class="error" hidden></p>
+        <button type="submit" id="check-btn" class="btn primary">Check</button>
+      </form>
+
+
+      <section id="result" class="result" hidden>
+        <p id="result-tagline" class="tagline"></p>
+        <p id="result-verdict" class="verdict-label"></p>
+        <p id="result-score" class="score" aria-live="polite"></p>
+        <p id="result-score-caption" class="score-caption">Value Score</p>
+        <p id="result-range" class="range"></p>
+        <p id="result-delta" class="delta"></p>
+        <p id="result-car" class="result-car"></p>
+
+        <div class="result-actions">
+          <button type="button" id="share-btn" class="btn secondary" disabled hidden title="Coming soon">Share</button>
+          <button type="button" id="challenge-btn" class="btn secondary">Challenge a mate</button>
+        </div>
+        <p id="challenge-status" class="status" hidden></p>
+
+        <section id="questions-block" class="questions">
+          <div class="questions-head">
+            <h2>Questions to ask the garage</h2>
+            <div class="q-actions">
+              <button type="button" id="copy-questions" class="btn ghost small">Copy</button>
+              <button type="button" id="share-questions" class="btn ghost small" hidden>Share</button>
+            </div>
+          </div>
+          <p id="questions-label" class="questions-label"></p>
+          <ol id="questions-list"></ol>
+        </section>
+      </section>
+
+      <p class="disclaimer">Estimates, not a valuation. Figures come from a placeholder dataset until Ethan reviews them.</p>
+    </main>
+
+    <section id="tab-best" class="panel" hidden>
+      <div class="card coming-soon">
+        <h2>Best value</h2>
+        <p class="soon-chip">Coming soon</p>
+        <p>Enter a budget, body type, max mileage, max age and fuel, and we'll rank the best-value models from the dataset.</p>
+      </div>
+    </section>
+
+    <nav class="tabbar" aria-label="Main">
+      <button type="button" class="tab active" data-tab="check">Check</button>
+      <button type="button" class="tab" data-tab="best">Best value <span class="soon">soon</span></button>
+    </nav>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

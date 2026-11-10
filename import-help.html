@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0c0f">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Import a UK used-car listing into Worth It? with a bookmarklet or by pasting the listing text.">
+  <title>Import a listing — Worth It?</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <p class="banner" role="status">
+        Test build — placeholder prices, not real valuations
+      </p>
+      <div class="brand">
+        <p class="back"><a href="./index.html">← Back to the checker</a></p>
+        <h1>Import a listing</h1>
+        <p class="tag">No account, no server fetch from your phone — this runs in your browser on the page you already have open.</p>
+      </div>
+    </header>
+
+    <main class="panel">
+      <section class="card">
+        <h2>Bookmarklet</h2>
+        <p class="hint">Drag this link to your bookmarks bar (on a phone: add the bookmark, then edit its address to the <code>javascript:</code> link below).</p>
+        <p class="bookmarklet-wrap">
+          <a id="bookmarklet" class="btn primary bookmarklet" href="#">Worth It? import</a>
+        </p>
+        <ol class="steps">
+          <li>Open the used-car listing in your browser (Autotrader, Gumtree, eBay, Facebook Marketplace, CarGurus, Motors.co.uk, Cinch…).</li>
+          <li>Tap or click the <strong>Worth It? import</strong> bookmark.</li>
+          <li>This app opens on the “Is this right?” screen, with any details the page made available already filled in. Missing boxes are highlighted so you can complete them — nothing is guessed.</li>
+        </ol>
+        <p class="hint">If the host changes, come back to this page and drag the bookmark again so it points at the new address.</p>
+        <p id="bookmarklet-status" class="hint" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>Paste the listing text</h2>
+        <p class="hint">Copy the heading and specs from the advert — for example:</p>
+        <pre class="example">2018 (68 reg) Ford Fiesta 1.0 EcoBoost 125 Titanium 5dr
+42,000 miles, Petrol, Manual, £8,495</pre>
+        <p class="hint">Then paste that into the checker. Year, mileage, fuel, engine, gearbox and price are filled when they’re obvious. Anything unclear is left blank.</p>
+        <p><a class="btn secondary" href="./index.html">Open the checker</a></p>
+      </section>
+
+      <section class="card">
+        <h2>Paste a listing link</h2>
+        <p class="hint">A local lookup can read structured data from some dealer pages (Cinch worked in our tests). Sites that refuse a simple request, or that only fill in after JavaScript in your browser, won’t work from a pasted link — use the bookmarklet or paste the text instead.</p>
+        <p class="hint">The lookup is off unless a local worker URL is set. Nothing here is deployed.</p>
+      </section>
+    </main>
+  </div>
+  <script type="module">
+    import { APP_URL } from './src/config.js';
+    import { bookmarkletHref } from './src/bookmarklet.js';
+
+    const path = window.location.pathname.replace(/import-help\.html$/i, '').replace(/\/?$/, '/');
+    const base = APP_URL || (window.location.origin + path);
+    const href = bookmarkletHref(base);
+    const link = document.getElementById('bookmarklet');
+    link.href = href;
+    const status = document.getElementById('bookmarklet-status');
+    status.hidden = false;
+    status.textContent = 'This bookmark opens ' + base;
+  </script>
+</body>
+</html>
