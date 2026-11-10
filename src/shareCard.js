@@ -24,6 +24,13 @@ const COLOURS = {
   red: '#ff6b4a',
 };
 
+
+const STRONG_SHARE_TAGLINES = /walk away\.?|haggle hard\.?|having a laugh|not at that money|get in\.?|that'll fly|don't hang about/i;
+
+export function isStrongShareTagline(text) {
+  return STRONG_SHARE_TAGLINES.test(String(text || ''));
+}
+
 export function footerUrl(base = APP_URL) {
   const trimmed = String(base || '').replace(/\/+$/, '');
   return trimmed || 'link coming soon';
@@ -38,7 +45,10 @@ export function buildCardModel({ listing, result, appUrl = APP_URL } = {}) {
   const draft = listing?.model?.draft === true || result?.draft === true;
   const placeholder = !draft && (listing?.model?.placeholder === true || result?.placeholder === true);
   const rotating = result?.verdict?.taglines?.[0] || '';
-  const tagline = result?.tagline || rotating || (result?.confident === false ? 'Indicative only' : '');
+  const unverified = draft || placeholder || result?.confident === false;
+  let tagline = result?.tagline || '';
+  if (!tagline) tagline = unverified ? 'Indicative only.' : rotating;
+  if (unverified && isStrongShareTagline(tagline)) tagline = 'Indicative only.';
   return {
     appName: APP_NAME,
     name,

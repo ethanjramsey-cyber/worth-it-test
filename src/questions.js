@@ -91,7 +91,7 @@ function timingQuestionFromType(entry, { review = false } = {}) {
   // the weaker of timing vs shown interval.
   const conf = intervalOk && !isVerified(entry.interval.confidence) ? entry.interval.confidence : entry.timingConfidence;
   let text;
-  if (entry.timingType === 'belt-in-oil') {
+  if (entry.timingType === 'belt-in-oil' || entry.timingType === 'wet-belt') {
     text = `Has the wet belt (belt-in-oil) been changed?${intervalBit} Any record of oil-dilution checks?`;
   } else if (entry.timingType === 'belt') {
     text = `Has the cambelt been changed?${intervalBit}`;
@@ -104,8 +104,13 @@ function timingQuestionFromType(entry, { review = false } = {}) {
   return { ...badge(text, review, conf), kind: isVerified(entry.timingConfidence) && isVerified(intervalConf) || isVerified(entry.timingConfidence) ? (isVerified(conf) ? 'specific' : 'review') : 'review' };
 }
 
-function issueQuestion(issue) {
-  const cleaned = String(issue.note).trim().replace(/\.$/, '');
+export function issueQuestion(issue) {
+  const raw = String(issue?.note || issue?.issue || issue?.text || '').trim().replace(/\.$/, '');
+  if (!raw) return '';
+  if (/wet timing belt/i.test(raw) || (/belt runs in oil/i.test(raw) && /degrad/i.test(raw))) {
+    return "I've read this engine can have a wet timing belt — a belt that runs in oil — which can degrade. Has that been checked or addressed on this car?";
+  }
+  const cleaned = raw.charAt(0).toLowerCase() + raw.slice(1);
   return `I've read this engine can have ${cleaned}. Has that been checked or addressed on this car?`;
 }
 

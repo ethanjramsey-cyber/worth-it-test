@@ -3,7 +3,7 @@
  * timeline, mileage chart, and flags. All user/API text is escaped.
  */
 import { formatMiles } from './score.js';
-import { formatIsoDate, mileageHistory, motSummaryLine, vehicleFlags } from './vehicleInsights.js';
+import { formatIsoDate, formatEngineLabel, mileageHistory, motSummaryLine, vehicleFlags } from './vehicleInsights.js';
 
 export const OGL_ATTRIBUTION = 'Contains public sector information licensed under the Open Government Licence v3.0.';
 export const NO_ENDORSEMENT = 'Worth It? is not affiliated with or endorsed by DVLA or DVSA.';
@@ -130,12 +130,13 @@ function detailRow(label, value) {
   return `<div class="v-detail"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
 }
 
-export function vehicleFacts(vehicle) {
+export function vehicleFacts(vehicle, { listingEngine } = {}) {
   const rows = [];
   if (vehicle.year || vehicle.yearOfManufacture) rows.push(['Year', vehicle.year || vehicle.yearOfManufacture]);
   if (vehicle.colour) rows.push(['Colour', vehicle.colour]);
   if (vehicle.fuelType) rows.push(['Fuel', vehicle.fuelType]);
-  if (vehicle.engineCapacity) rows.push(['Engine', `${Number(vehicle.engineCapacity).toLocaleString('en-GB')} cc`]);
+  const engineLabel = formatEngineLabel(listingEngine || vehicle.listingEngine, vehicle.engineCapacity);
+  if (engineLabel) rows.push(['Engine', engineLabel]);
   if (vehicle.co2Emissions != null) rows.push(['CO₂', `${vehicle.co2Emissions} g/km`]);
   if (vehicle.euroStatus) rows.push(['Euro status', vehicle.euroStatus]);
   if (vehicle.typeApproval) rows.push(['Type approval', vehicle.typeApproval]);
@@ -178,7 +179,7 @@ function statusLabel(status) {
   return status;
 }
 
-export function vehicleCardHtml(vehicle, { sources, now } = {}) {
+export function vehicleCardHtml(vehicle, { sources, now, listingEngine } = {}) {
   if (!vehicle) return '';
   const name = [vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'Official vehicle record';
   const year = vehicle.year || vehicle.yearOfManufacture || '';
@@ -190,7 +191,7 @@ export function vehicleCardHtml(vehicle, { sources, now } = {}) {
     <h2 class="vehicle-title">${escapeHtml(year ? `${year} ${name}` : name)}</h2>
     <div class="vehicle-badges">${taxBadge(vehicle)}${motBadge(vehicle)}</div>
     ${summary ? `<p class="vehicle-summary">${escapeHtml(summary)}</p>` : ''}
-    <dl class="vehicle-facts">${vehicleFacts(vehicle)}</dl>
+    <dl class="vehicle-facts">${vehicleFacts(vehicle, { listingEngine })}</dl>
     ${flagsHtml(flags)}
     <h3 class="vehicle-sub">Mileage history</h3>
     ${mileageChartSvg(points)}

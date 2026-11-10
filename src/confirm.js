@@ -78,6 +78,7 @@ export function fieldStatuses(input = {}, opts = {}) {
     const missing = !isFilled(value);
     const low = !missing && confidence < LOW_CONFIDENCE;
     const customLabel = raw && typeof raw === 'object' ? raw.sourceLabel : null;
+    const display = raw && typeof raw === 'object' && raw.display ? raw.display : null;
     return {
       key,
       label,
@@ -87,6 +88,7 @@ export function fieldStatuses(input = {}, opts = {}) {
       confidence,
       missing,
       low,
+      display: missing ? null : display,
     };
   });
 }

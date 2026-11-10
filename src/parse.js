@@ -1,3 +1,4 @@
+import { extractPlates } from './plate.js';
 /**
  * Conservative UK used-car listing-text parser.
  * Returns null for a field if unsure — never guesses a value silently.
@@ -468,6 +469,7 @@ export function parseListingDetails(text, now = new Date()) {
   const raw = String(text ?? '').trim();
   const base = parseListingText(raw, now);
   const { make, model } = parseMakeModel(raw);
+  const plates = extractPlates(raw).plates;
   return {
     ...base,
     make,
@@ -475,5 +477,6 @@ export function parseListingDetails(text, now = new Date()) {
     engine: parseEngine(raw),
     fuel: parseFuel(raw),
     gearbox: parseGearbox(raw),
+    plates,
   };
 }

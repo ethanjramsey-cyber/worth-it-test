@@ -283,12 +283,20 @@ export function modelsDisagree(plateModel, listingModel) {
   return true;
 }
 
-export function yearsDisagree(a, b) {
+export function yearsDisagree(a, b, { tolerance = 1 } = {}) {
   if (a == null || a === '' || b == null || b === '') return false;
   const ya = Number(a);
   const yb = Number(b);
   if (!Number.isFinite(ya) || !Number.isFinite(yb)) return false;
-  return ya !== yb;
+  return Math.abs(ya - yb) > tolerance;
+}
+
+export function regMismatchWarning({ listingMake, listingModel, listingYear, officialMake, officialModel, officialYear } = {}) {
+  const listed = [listingMake, listingModel, listingYear != null && listingYear !== '' ? `(${listingYear})` : '']
+    .filter(Boolean).join(' ');
+  const official = [officialMake, officialModel, officialYear != null && officialYear !== '' ? `(${officialYear})` : '']
+    .filter(Boolean).join(' ');
+  return `Reg doesn't match the listing. The listing says ${listed}; the official record says ${official}.`;
 }
 
 export function engineFromCapacity(cc) {
@@ -300,6 +308,43 @@ export function engineFromCapacity(cc) {
     return `${litres} litre`;
   }
   return `${Math.round(n)} cc`;
+}
+
+/** Official capacity as a compact cc label, e.g. "999 cc". */
+export function engineCapacityLabel(cc) {
+  const n = Number(cc);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `${Math.round(n).toLocaleString('en-GB')} cc`;
+}
+
+/**
+ * Prefer the listing's engine text (e.g. "1.0 EcoBoost") and show official
+ * capacity as a secondary cc figure when we have it.
+ */
+export function formatEngineLabel(listingText, capacityCc) {
+  let text = listingText;
+  if (text && typeof text === 'object') text = text.text || text.value || '';
+  text = text == null ? '' : String(text).trim();
+  const ccLabel = engineCapacityLabel(capacityCc);
+  if (text && ccLabel) {
+    const compact = text.replace(/[\s,]/g, '').toLowerCase();
+    const ccCompact = ccLabel.replace(/[\s,]/g, '').toLowerCase();
+    const n = Math.round(Number(capacityCc));
+    if (compact.includes(ccCompact) || (Number.isFinite(n) && new RegExp(`\\b${n}\\s*cc\\b`, 'i').test(text))) {
+      return text;
+    }
+    return `${text} (${ccLabel})`;
+  }
+  return text || ccLabel || null;
+}
+
+function engineText(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object') {
+    const t = value.text || value.value || '';
+    return String(t).trim() || null;
+  }
+  return String(value).trim() || null;
 }
 
 /**
@@ -320,7 +365,9 @@ export function listingFieldsFromVehicle(vehicle) {
   if (!fields.make && vehicle.make) set('make', vehicle.make, 'dvsa-mot', 0.95);
   set('year', vehicle.year || vehicle.yearOfManufacture, 'dvla-ves', 0.95);
   set('fuel', vehicle.fuelType, vehicle.fuelType ? 'dvsa-mot' : 'dvla-ves', 0.9);
-  set('engine', engineFromCapacity(vehicle.engineCapacity), 'dvla-ves', 0.85);
+  const officialEngine = formatEngineLabel(null, vehicle.engineCapacity);
+  set('engine', officialEngine, 'dvla-ves', 0.85);
+  if (fields.engine) fields.engine.display = officialEngine;
   if (vehicle.latestOdometerMiles != null) {
     const label = mileageDate
       ? `last MOT on ${formatIsoDate(mileageDate)} — enter current mileage if different`
@@ -379,26 +426,46 @@ export function mergePlateAndListing(vehicle, listing) {
   const listingModel = fieldValue(listingObj, 'model');
   const listingMake = fieldValue(listingObj, 'make');
 
+  const yearMismatch = yearsDisagree(fromPlate.year, listingYear);
+  const makeMismatch = modelsDisagree(fromPlate.make, listingMake);
+  const modelMismatch = modelsDisagree(fromPlate.model, listingModel);
+  const conflicts = [];
+
   for (const key of LISTING_KEYS) {
     const listingVal = fieldValue(listingObj, key);
     if (isBlank(listingVal)) continue;
     const fromListing = listingObj.fields?.[key];
     const source = (fromListing && fromListing.source) || listingObj.source || 'pasted-text';
     const confidence = (fromListing && fromListing.confidence) || 0.8;
-    if (key === 'price' || key === 'mileage' || isBlank(out[key])) {
-      out[key] = listingVal;
-      fields[key] = { value: listingVal, source, confidence };
+    const conflicted = (key === 'year' && yearMismatch)
+      || (key === 'make' && makeMismatch)
+      || (key === 'model' && modelMismatch);
+    if (conflicted && !isBlank(out[key])) {
+      conflicts.push({ key, listing: listingVal, official: out[key] });
+    }
+    if (key === 'price' || key === 'mileage' || key === 'engine' || isBlank(out[key]) || conflicted) {
+      const value = key === 'engine' ? (engineText(listingVal) ?? listingVal) : listingVal;
+      out[key] = value;
+      fields[key] = { value, source, confidence };
     }
   }
 
-  const warnings = [];
-  if (yearsDisagree(fromPlate.year, listingYear)) {
-    warnings.push(`The listing year (${listingYear}) does not match the official record (${fromPlate.year}). Worth checking.`);
+  const engineDisplay = formatEngineLabel(out.engine, vehicle?.engineCapacity);
+  if (engineDisplay) {
+    if (fields.engine) fields.engine.display = engineDisplay;
+    else fields.engine = { value: out.engine, source: 'dvla-ves', confidence: 0.85, display: engineDisplay };
   }
-  if (modelsDisagree(fromPlate.model, listingModel) || modelsDisagree(fromPlate.make, listingMake)) {
-    const official = [fromPlate.make, fromPlate.model].filter(Boolean).join(' ');
-    const listed = [listingMake, listingModel].filter(Boolean).join(' ');
-    warnings.push(`The listing describes this as ${listed}, but the official record is ${official}. Worth checking.`);
+
+  const warnings = [];
+  if (yearMismatch || makeMismatch || modelMismatch) {
+    warnings.push(regMismatchWarning({
+      listingMake,
+      listingModel,
+      listingYear,
+      officialMake: fromPlate.make,
+      officialModel: fromPlate.model,
+      officialYear: fromPlate.year,
+    }));
   }
 
   return {
@@ -406,6 +473,7 @@ export function mergePlateAndListing(vehicle, listing) {
     fields,
     mileageNote: out.mileage === fromPlate.mileage ? fromPlate.mileageNote : null,
     warnings,
+    conflicts,
     fromPlate: true,
   };
 }
