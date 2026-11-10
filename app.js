@@ -4,6 +4,7 @@ import { datasetFreshness, datasetHasDrafts, datasetHasPlaceholders, isDraftMode
 import { buildCardModel, shareText, challengeLinkFor, renderShareCardPng, renderBothCards, shareOrDownload, downloadBlob, CARD_SIZES } from './src/shareCard.js';
 import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.js';
 import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
+import { extractPlates, plateImportState, normalisePlate, mergePlateLists } from './src/plate.js';
 import { parseChallengeParams, buildChallengeUrl, challengeUrlForDisplay } from './src/url.js';
 import { buildConfirmState } from './src/confirm.js';
 import { mergePlateAndListing, motSummaryLine } from './src/vehicleInsights.js';
@@ -95,6 +96,11 @@ let lastListing = null;
 let lastResult = null;
 let lastVehicle = null;
 let lastListingExtract = null;
+let lastImportedPlates = { plates: [], plateStatus: null };
+let lastLookedUpPlate = null;
+let lastConflicts = [];
+let lastConfirmInput = null;
+let workerReachable = null;
 let deferredInstall = null;
 const CHECKS_KEY = 'worthit-check-count';
 const INSTALL_DISMISS_KEY = 'worthit-install-dismissed';
@@ -306,7 +312,7 @@ function renderConfirm(input, opts = {}) {
       lab.textContent = s.label;
       const val = document.createElement('span');
       val.className = 'cf-value';
-      val.textContent = formatFieldValue(s.key, s.value);
+      val.textContent = s.display || formatFieldValue(s.key, s.value);
       li.append(lab, val);
       const src = document.createElement('span');
       src.className = 'cf-source';
@@ -317,10 +323,69 @@ function renderConfirm(input, opts = {}) {
       els.confirmFields.append(li);
     }
   }
+  lastConfirmInput = input;
+  renderConfirmMismatch(input);
   highlightFields(state.statuses);
   els.confirm.hidden = false;
   els.confirm.scrollIntoView({ behavior: 'smooth', block: 'start' });
   return state;
+}
+
+function renderConfirmMismatch(input) {
+  const box = $('confirm-mismatch');
+  if (!box) return;
+  const conflicts = input?.conflicts || [];
+  lastConflicts = conflicts;
+  if (!conflicts.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = '';
+  const p = document.createElement('p');
+  p.className = 'mismatch-warning';
+  p.textContent = (input.warnings && input.warnings[0]) || "Reg doesn't match the listing";
+  box.append(p);
+  for (const c of conflicts) {
+    const row = document.createElement('div');
+    row.className = 'mismatch-row';
+    const title = document.createElement('p');
+    title.className = 'mismatch-label';
+    title.textContent = c.key.charAt(0).toUpperCase() + c.key.slice(1);
+    row.append(title);
+    for (const side of ['listing', 'official']) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn secondary small mismatch-pick';
+      const value = c[side];
+      btn.textContent = side === 'listing' ? `Listing: ${formatFieldValue(c.key, value)}` : `Official record: ${formatFieldValue(c.key, value)}`;
+      if (String(input[c.key]) === String(value)) btn.classList.add('is-selected');
+      btn.addEventListener('click', () => pickConflict(c.key, side));
+      row.append(btn);
+    }
+    box.append(row);
+  }
+}
+
+function pickConflict(key, side) {
+  const c = lastConflicts.find((x) => x.key === key);
+  if (!c || !lastConfirmInput) return;
+  const value = c[side];
+  lastConfirmInput = {
+    ...lastConfirmInput,
+    [key]: value,
+    fields: {
+      ...(lastConfirmInput.fields || {}),
+      [key]: {
+        value,
+        source: side === 'official' ? 'plate' : (lastConfirmInput.fields?.[key]?.source || 'pasted-text'),
+        confidence: side === 'official' ? 0.95 : 0.8,
+      },
+    },
+  };
+  fillFormFromExtracted(lastConfirmInput, { onlyMissing: false });
+  renderConfirm(lastConfirmInput, { defaultSource: 'plate', defaultConfidence: 0.9 });
 }
 
 function hideConfirm() {
@@ -409,10 +474,13 @@ function applyParsedText(text) {
   const any = parsed.year || parsed.mileage != null || parsed.price != null || parsed.fuel || parsed.gearbox || parsed.engine || parsed.make || parsed.model;
   const confirmInput = listingFromParsed(parsed);
   lastListingExtract = confirmInput;
-  if (lastVehicle && any) {
-    confirmFromVehicle(lastVehicle, confirmInput, { statusEl: pasteStatus });
-  } else if (any) {
-    renderConfirm(confirmInput, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
+  const plateState = applyImportedPlates(confirmInput, { text, statusEl: pasteStatus, autoLookup: true });
+  if (!(plateState && plateState.autoLookup && vehicleEndpoint())) {
+    if (lastVehicle && any) {
+      confirmFromVehicle(lastVehicle, confirmInput, { statusEl: pasteStatus });
+    } else if (any) {
+      renderConfirm(confirmInput, { defaultSource: 'pasted-text', defaultConfidence: 0.8 });
+    }
   }
 
   const needsAi = Boolean(parseEndpoint()) && !isLink && trimmed.length >= 20
@@ -435,8 +503,13 @@ function applyParsedText(text) {
       return;
     }
     const merged = mergeMissingListingFields(confirmInput, data, 'ai-pasted-text');
+    const plated = mergePlateLists(merged, data);
+    merged.plates = plated.plates;
+    merged.plateStatus = plated.plateStatus;
     lastListingExtract = merged;
     fillFormFromExtracted(merged, { onlyMissing: true });
+    const plateState = applyImportedPlates(merged, { text: trimmed, statusEl: pasteStatus, autoLookup: true, plateStatus: data.plateStatus });
+    if (plateState && plateState.autoLookup && vehicleEndpoint()) return;
     if (lastVehicle) {
       confirmFromVehicle(lastVehicle, merged, { statusEl: pasteStatus });
       return;
@@ -459,6 +532,7 @@ function listingFromParsed(parsed) {
     engine: parsed.engine?.text || parsed.engine || null,
     gearbox: parsed.gearbox,
     price: parsed.price,
+    plates: parsed.plates || [],
   };
 }
 
@@ -774,18 +848,45 @@ function vehicleEndpoint() {
   return `${base}${VEHICLE_PATH}`;
 }
 
-if (extractEndpoint()) {
-  els.urlImport.hidden = false;
+async function probeWorker() {
+  const base = WORKER_URL ? WORKER_URL.replace(/\/+$/, '') : '';
+  if (!base) return false;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch(`${base}/health`, { method: 'GET', signal: ctrl.signal });
+    clearTimeout(timer);
+    const data = await res.json().catch(() => null);
+    return Boolean(res.ok && data && data.ok);
+  } catch {
+    return false;
+  }
 }
-if (parseEndpoint() && els.screenshotField) {
-  els.screenshotField.hidden = false;
+
+function setWorkerFeatures(on) {
+  workerReachable = on;
+  if (els.urlImport) els.urlImport.hidden = !on;
+  if (els.screenshotField) els.screenshotField.hidden = !on;
+  if (els.plateLookup) els.plateLookup.hidden = !on;
 }
-if (vehicleEndpoint() && els.plateLookup) {
-  els.plateLookup.hidden = false;
+
+if (WORKER_URL) {
+  setWorkerFeatures(false);
+  probeWorker().then((ok) => setWorkerFeatures(ok));
 }
 
 els.listingScreenshot?.addEventListener('change', () => {
   const file = els.listingScreenshot.files && els.listingScreenshot.files[0];
+  const nameEl = $('screenshot-filename');
+  if (nameEl) {
+    if (file) {
+      nameEl.hidden = false;
+      nameEl.textContent = file.name;
+    } else {
+      nameEl.hidden = true;
+      nameEl.textContent = '';
+    }
+  }
   if (file) handleScreenshot(file);
 });
 
@@ -845,12 +946,15 @@ async function handleScreenshot(file) {
       return;
     }
     lastListingExtract = data;
+    const plateState = applyImportedPlates(data, { statusEl: status, autoLookup: true, plateStatus: data.plateStatus });
+    if (plateState && plateState.autoLookup && vehicleEndpoint()) return;
     if (lastVehicle) {
       confirmFromVehicle(lastVehicle, data, { statusEl: status });
       return;
     }
     fillFormFromExtracted(data, { onlyMissing: true });
-    showStatus(status, 'Have a look below — is this right? Fields came from an AI read of your screenshot.', 'ok');
+    const blurMsg = plateState && (plateState.mode === 'blurred' || plateState.mode === 'hidden') ? plateState.message : '';
+    showStatus(status, blurMsg || 'Have a look below — is this right? Fields came from an AI read of your screenshot.', blurMsg ? '' : 'ok');
     renderConfirm(data, { defaultSource: 'ai-screenshot', defaultConfidence: data.confidence ?? 0.7 });
   } catch {
     showStatus(status, "Couldn't read that screenshot. Enter the details yourself.", 'err');
@@ -878,6 +982,9 @@ function applySlugFallback(url, reasonMessage) {
   }
   fillFormFromParsed(parsed, slug);
   const confirmInput = listingFromParsed(parsed);
+  lastListingExtract = confirmInput;
+  const plateState = applyImportedPlates(confirmInput, { text: slug, statusEl: els.urlStatus, autoLookup: true });
+  if (plateState && plateState.autoLookup && vehicleEndpoint()) return true;
   renderConfirm(confirmInput, { defaultSource: 'url-params', defaultConfidence: 0.6 });
   const unmatched = unmatchedModelMessage(confirmInput, matchModel(confirmInput.make, confirmInput.model, models));
   showStatus(
@@ -921,6 +1028,12 @@ async function fetchListingUrl() {
     }
     applyExtracted(data);
     lastListingExtract = data;
+    const plateState = applyImportedPlates(data, { statusEl: els.urlStatus, autoLookup: true, plateStatus: data.plateStatus });
+    const imageNote = data.imageLookup && data.imageLookup.message ? ` ${data.imageLookup.message}` : '';
+    if (plateState && plateState.autoLookup && vehicleEndpoint()) {
+      if (imageNote) showStatus(els.urlStatus, imageNote.trim(), '');
+      return;
+    }
     if (lastVehicle) {
       confirmFromVehicle(lastVehicle, data, { statusEl: els.urlStatus });
       return;
@@ -931,7 +1044,8 @@ async function fetchListingUrl() {
       model: data.model || selectedModel?.model || null,
     };
     const unmatched = unmatchedModelMessage(confirmData, matchModel(confirmData.make, confirmData.model, models));
-    showStatus(els.urlStatus, unmatched || 'Have a look below — is this right?', unmatched ? 'err' : 'ok');
+    const blurMsg = plateState && (plateState.mode === 'blurred' || plateState.mode === 'hidden') ? plateState.message : '';
+    showStatus(els.urlStatus, unmatched || blurMsg || (`Have a look below — is this right?${imageNote}`), unmatched ? 'err' : 'ok');
     renderConfirm(confirmData, { defaultSource: data.source || 'import', defaultConfidence: data.confidence ?? 0.8 });
   } catch {
     applySlugFallback(url, "Couldn't reach the lookup service. Paste the listing text or enter the details yourself.");
@@ -1002,12 +1116,142 @@ function renderVehicleCard(vehicle, sources) {
     return;
   }
   els.vehicleCard.hidden = false;
-  els.vehicleCard.innerHTML = vehicleCardHtml(vehicle, { sources, now: NOW });
+  els.vehicleCard.innerHTML = vehicleCardHtml(vehicle, { sources, now: NOW, listingEngine: listingEngineText(lastListingExtract) });
 }
 
-async function lookupPlate() {
+function listingEngineText(listing) {
+  if (!listing) return null;
+  const fromMap = listing.fields?.engine;
+  if (fromMap && typeof fromMap === 'object' && (fromMap.value || fromMap.text)) {
+    return fromMap.value || fromMap.text;
+  }
+  const v = listing.engine;
+  if (v && typeof v === 'object') return v.text || v.value || null;
+  return v || null;
+}
+
+function syncLookupPlateButton() {
+  if (!els.lookupPlateBtn) return;
+  const banner = $('plate-found-banner');
+  const entry = $('plate-entry-field');
+  const foundAndLookedUp = Boolean(
+    lastLookedUpPlate
+    && banner && !banner.hidden
+    && entry && entry.hidden
+  );
+  els.lookupPlateBtn.hidden = foundAndLookedUp;
+}
+
+function platesFromImport(data, text) {
+  const fromData = data?.plates || [];
+  const fromText = text ? extractPlates(text).plates : [];
+  return mergePlateLists({ plates: fromData, plateStatus: data?.plateStatus }, { plates: fromText, plateStatus: data?.plateStatus });
+}
+
+function applyImportedPlates(data, { text, statusEl, autoLookup = true, plateStatus } = {}) {
+  const input = platesFromImport({ ...data, plateStatus: plateStatus || data?.plateStatus }, text);
+  lastImportedPlates = input;
+  if (data && typeof data === 'object') {
+    data.plates = input.plates;
+    data.plateStatus = input.plateStatus;
+  }
+  return renderPlateImport(input, { statusEl, autoLookup });
+}
+
+function renderPlateImport(input, { statusEl, autoLookup = true } = {}) {
+  const state = plateImportState(input);
+  const banner = $('plate-found-banner');
+  const label = $('plate-found-label');
+  const choices = $('plate-choices');
+  const choiceBtns = $('plate-choice-buttons');
+  const entry = $('plate-entry-field');
+  const fieldLabel = $('plate-field-label');
+  const heading = $('plate-lookup-heading');
+
+  if (heading) {
+    heading.textContent = state.mode === 'many' ? 'Which plate?' : (state.mode === 'one' ? 'Number plate' : 'Add the reg for more accurate checks');
+  }
+  if (fieldLabel) fieldLabel.textContent = 'Number plate';
+  if (banner) banner.hidden = state.mode !== 'one';
+  if (label && state.mode === 'one') label.textContent = state.message;
+  if (choices) choices.hidden = state.mode !== 'many';
+  if (choiceBtns) {
+    choiceBtns.innerHTML = '';
+    if (state.mode === 'many') {
+      for (const plate of state.plates) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn secondary';
+        btn.textContent = plate;
+        btn.addEventListener('click', () => selectImportedPlate(plate));
+        choiceBtns.append(btn);
+      }
+    }
+  }
+  if (entry) entry.hidden = state.mode === 'one';
+  if (state.mode === 'one' && els.vehicleReg) els.vehicleReg.value = state.plates[0];
+
+  if (state.mode === 'blurred' || state.mode === 'hidden') {
+    const msgEl = statusEl || els.plateStatus;
+    showStatus(msgEl, state.message, '');
+    if (els.plateStatus && msgEl !== els.plateStatus) showStatus(els.plateStatus, state.message, '');
+  }
+
+  if (autoLookup && state.autoLookup && state.plates[0] && vehicleEndpoint()) {
+    lookupPlate({ reg: state.plates[0], auto: true });
+  }
+  syncLookupPlateButton();
+  return state;
+}
+
+function selectImportedPlate(plate) {
+  if (els.vehicleReg) els.vehicleReg.value = plate;
+  const banner = $('plate-found-banner');
+  const label = $('plate-found-label');
+  const choices = $('plate-choices');
+  const entry = $('plate-entry-field');
+  if (choices) choices.hidden = true;
+  if (banner) banner.hidden = false;
+  if (label) label.textContent = `Plate found: ${plate}`;
+  if (entry) entry.hidden = true;
+  syncLookupPlateButton();
+  lookupPlate({ reg: plate, auto: true });
+}
+
+function editImportedPlate() {
+  const entry = $('plate-entry-field');
+  if (entry) entry.hidden = false;
+  if (els.lookupPlateBtn) els.lookupPlateBtn.hidden = false;
+  if (els.vehicleReg) {
+    els.vehicleReg.focus();
+    els.vehicleReg.select();
+  }
+}
+
+function removeImportedPlate() {
+  lastLookedUpPlate = null;
+  lastVehicle = null;
+  lastImportedPlates = { plates: [], plateStatus: null };
+  if (els.vehicleReg) els.vehicleReg.value = '';
+  renderVehicleCard(null);
+  renderPlateImport({ plates: [], plateStatus: null }, { autoLookup: false });
+  if (lastListingExtract) {
+    const listing = { ...lastListingExtract };
+    delete listing.warnings;
+    delete listing.conflicts;
+    delete listing.fromPlate;
+    renderConfirm(listing, { defaultSource: lastListingExtract.source || 'import', defaultConfidence: 0.8 });
+    showStatus(els.plateStatus, 'Plate removed. You can add a different reg, or carry on without one.', '');
+  } else {
+    showStatus(els.plateStatus, '', '');
+  }
+}
+
+async function lookupPlate({ reg, auto } = {}) {
   const endpoint = vehicleEndpoint();
-  const raw = (els.vehicleReg?.value || '').trim();
+  const raw = (reg || els.vehicleReg?.value || '').trim();
+  const compact = normalisePlate(raw);
+  if (auto && lastLookedUpPlate && lastLookedUpPlate === compact) return;
   if (!endpoint) {
     showStatus(els.plateStatus, "Plate lookup isn't available just now. Enter the details yourself.", 'err');
     return;
@@ -1031,8 +1275,12 @@ async function lookupPlate() {
     }
     if (!data || data.ok === false) {
       showStatus(els.plateStatus, data?.message || "Couldn't find that registration. Enter the details yourself.", 'err');
+      if (auto && lastListingExtract) {
+        renderConfirm(lastListingExtract, { defaultSource: lastListingExtract.source || 'import', defaultConfidence: 0.8 });
+      }
       return;
     }
+    lastLookedUpPlate = compact;
     renderVehicleCard(data, data.sources);
     confirmFromVehicle(data, lastListingExtract, {
       statusEl: els.plateStatus,
@@ -1042,10 +1290,13 @@ async function lookupPlate() {
     showStatus(els.plateStatus, "Couldn't reach the lookup service. Enter the details yourself.", 'err');
   } finally {
     if (els.lookupPlateBtn) els.lookupPlateBtn.disabled = false;
+    syncLookupPlateButton();
   }
 }
 
 els.lookupPlateBtn?.addEventListener('click', () => lookupPlate());
+$('plate-edit-btn')?.addEventListener('click', () => editImportedPlate());
+$('plate-remove-btn')?.addEventListener('click', () => removeImportedPlate());
 els.vehicleReg?.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') {
     ev.preventDefault();

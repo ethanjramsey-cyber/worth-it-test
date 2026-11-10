@@ -27,9 +27,20 @@
 
     <main id="tab-check" class="panel">
       <section id="plate-lookup" class="card plate-lookup" hidden>
-        <h2>Enter number plate</h2>
-        <label class="field">
-          <span>Number plate</span>
+        <h2 id="plate-lookup-heading">Add the reg for more accurate checks</h2>
+        <p id="plate-found-banner" class="plate-found" hidden>
+          <span id="plate-found-label">Plate found</span>
+          <span class="plate-found-actions">
+            <button type="button" id="plate-edit-btn" class="btn ghost small">Edit</button>
+            <button type="button" id="plate-remove-btn" class="btn ghost small">Remove</button>
+          </span>
+        </p>
+        <div id="plate-choices" class="plate-choices" hidden>
+          <p class="hint">Which plate should we look up?</p>
+          <div id="plate-choice-buttons" class="plate-choice-buttons"></div>
+        </div>
+        <label class="field" id="plate-entry-field">
+          <span id="plate-field-label">Number plate</span>
           <input id="vehicle-reg" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="10" placeholder="e.g. AB12 CDE">
         </label>
         <p class="hint privacy-note">The plate is sent to our lookup service to fetch official vehicle data. It is not stored.</p>
@@ -55,9 +66,12 @@
         <h2>Is this right?</h2>
         <p class="hint">Have a quick look and fix anything we've got wrong before we score it.</p>
         <p id="confirm-source" class="hint"></p>
+        <div id="confirm-mismatch" class="confirm-mismatch" hidden></div>
+        <div class="confirm-actions">
+          <button type="button" id="confirm-btn" class="btn primary">Looks right — check it</button>
+          <button type="button" id="confirm-cancel" class="btn ghost">Enter the details myself</button>
+        </div>
         <ul id="confirm-fields" class="confirm-fields"></ul>
-        <button type="button" id="confirm-btn" class="btn primary">Looks right — check it</button>
-        <button type="button" id="confirm-cancel" class="btn ghost">Enter the details myself</button>
       </section>
 
       <form id="checker-form" class="card" novalidate>
@@ -67,10 +81,12 @@
           <textarea id="listing-text" rows="3" placeholder="e.g. 2018 Ford Fiesta 1.0 EcoBoost, 42,000 miles, manual, £8,495"></textarea>
         </label>
         <p id="paste-status" class="status" hidden></p>
-        <label id="screenshot-field" class="field screenshot-field" hidden>
-          <span>Add a screenshot of the listing</span>
-          <input id="listing-screenshot" type="file" accept="image/*">
-        </label>
+        <div id="screenshot-field" class="field screenshot-field" hidden>
+          <span id="screenshot-label">Add a screenshot of the listing</span>
+          <input id="listing-screenshot" class="sr-only" type="file" accept="image/*" aria-labelledby="screenshot-label">
+          <label for="listing-screenshot" class="btn secondary file-btn">Choose a screenshot</label>
+          <p id="screenshot-filename" class="hint file-name" hidden></p>
+        </div>
         <p id="screenshot-status" class="status" hidden></p>
         <p class="hint">We'll fill the boxes if the year, mileage and price are obvious. Unknowns stay blank so you can fill them in. You can always edit them. You can also add a screenshot.</p>
 
