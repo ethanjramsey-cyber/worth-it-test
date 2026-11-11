@@ -6,9 +6,9 @@
 export const PLATE_STATUSES = Object.freeze(['found', 'blurred', 'hidden', 'not_visible']);
 
 const MEMORY_TAG = /^[A-HJ-PR-Y]{2}$/; // current-format area code; no I, Q, Z
-const RANDOM_LETTERS = /^[A-HJ-PR-TV-Z]{3}$/; // no I, Q; Z allowed
+const RANDOM_LETTERS = /^[A-HJ-PR-Z]{3}$/; // no I, Q; U and Z allowed
 const YEAR_LETTER = /^[A-HJ-NPR-TV-Y]$/; // prefix/suffix age letter; no I, O, Q, U, Z
-const RANDOM_PREFIX_SUFFIX = /^[A-HJ-PR-TV-Z]{3}$/;
+const RANDOM_PREFIX_SUFFIX = /^[A-HJ-PR-Z]{3}$/; // no I, Q; U and Z allowed
 
 const NEAR_LABEL = /\b(?:reg(?:istration)?(?:\s*(?:number|no\.?|num))?|vrm|vrn|number\s*plates?|numberplates?)\b/i;
 
