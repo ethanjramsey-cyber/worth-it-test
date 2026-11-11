@@ -1,5 +1,5 @@
 /* Offline cache of the static PWA. No listing pages are stored. */
-const CACHE = 'worth-it-test-v6';
+const CACHE = 'worth-it-test-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,7 @@ const ASSETS = [
   './src/vehicleInsights.js',
   './src/vehicleView.js',
   './src/plate.js',
+  './src/linkImport.js',
   './data/models.json',
   './data/segments.json',
   './data/garage-kb.json',

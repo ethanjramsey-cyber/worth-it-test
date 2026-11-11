@@ -5,6 +5,7 @@ import { buildCardModel, shareText, challengeLinkFor, renderShareCardPng, render
 import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.js';
 import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
 import { extractPlates, plateImportState, normalisePlate, mergePlateLists } from './src/plate.js';
+import { linkExtractUserMessage } from './src/linkImport.js';
 import { parseChallengeParams, buildChallengeUrl, challengeUrlForDisplay } from './src/url.js';
 import { buildConfirmState } from './src/confirm.js';
 import { mergePlateAndListing, motSummaryLine } from './src/vehicleInsights.js';
@@ -978,6 +979,7 @@ function applySlugFallback(url, reasonMessage) {
   const found = parsed.make || parsed.model || parsed.year;
   if (!found) {
     showStatus(els.urlStatus, reasonMessage, 'err');
+    if (els.plateStatus) showStatus(els.plateStatus, reasonMessage, 'err');
     return false;
   }
   fillFormFromParsed(parsed, slug);
@@ -987,11 +989,9 @@ function applySlugFallback(url, reasonMessage) {
   if (plateState && plateState.autoLookup && vehicleEndpoint()) return true;
   renderConfirm(confirmInput, { defaultSource: 'url-params', defaultConfidence: 0.6 });
   const unmatched = unmatchedModelMessage(confirmInput, matchModel(confirmInput.make, confirmInput.model, models));
-  showStatus(
-    els.urlStatus,
-    `${reasonMessage} We only read the link's own words.${unmatched ? ` ${unmatched}` : ''}`,
-    'err',
-  );
+  const msg = `${reasonMessage} We only read the link's own words.${unmatched ? ` ${unmatched}` : ''}`;
+  showStatus(els.urlStatus, msg, 'err');
+  if (els.plateStatus) showStatus(els.plateStatus, reasonMessage, 'err');
   return true;
 }
 
@@ -1013,25 +1013,28 @@ async function fetchListingUrl() {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data) {
-      applySlugFallback(url, "Couldn't read that page. Paste the listing text or enter the details yourself.");
+      applySlugFallback(url, linkExtractUserMessage({ error: 'network' }));
       return;
     }
     if (data.error === 'blocked' || data.error === 'timeout' || data.error === 'network' || data.error === 'http-error' || data.error === 'too-large') {
-      applySlugFallback(url, data.message || 'The site refused the request. Paste the listing text or enter the details yourself.');
+      applySlugFallback(url, linkExtractUserMessage({ error: data.error }) || data.message);
       return;
     }
     const keys = ['make', 'model', 'year', 'mileage', 'fuel', 'price', 'engine', 'gearbox'];
     const got = keys.filter((k) => data[k] != null && data[k] !== '');
     if (!got.length) {
-      applySlugFallback(url, data.message || "Couldn't read the details from this page. Try the bookmarklet or paste the listing text.");
+      applySlugFallback(url, linkExtractUserMessage({
+        fieldsFound: false,
+        plateCount: (data.plates || []).length,
+        plateStatus: data.plateStatus,
+        error: data.error,
+      }));
       return;
     }
     applyExtracted(data);
     lastListingExtract = data;
     const plateState = applyImportedPlates(data, { statusEl: els.urlStatus, autoLookup: true, plateStatus: data.plateStatus });
-    const imageNote = data.imageLookup && data.imageLookup.message ? ` ${data.imageLookup.message}` : '';
     if (plateState && plateState.autoLookup && vehicleEndpoint()) {
-      if (imageNote) showStatus(els.urlStatus, imageNote.trim(), '');
       return;
     }
     if (lastVehicle) {
@@ -1044,11 +1047,18 @@ async function fetchListingUrl() {
       model: data.model || selectedModel?.model || null,
     };
     const unmatched = unmatchedModelMessage(confirmData, matchModel(confirmData.make, confirmData.model, models));
-    const blurMsg = plateState && (plateState.mode === 'blurred' || plateState.mode === 'hidden') ? plateState.message : '';
-    showStatus(els.urlStatus, unmatched || blurMsg || (`Have a look below — is this right?${imageNote}`), unmatched ? 'err' : 'ok');
+    const fallback = linkExtractUserMessage({
+      fieldsFound: true,
+      plateCount: plateState?.plates?.length || 0,
+      plateStatus: plateState?.mode === 'blurred' || plateState?.mode === 'hidden' ? plateState.mode : data.plateStatus,
+      imageMessage: data.imageLookup && data.imageLookup.message,
+    });
+    const tone = unmatched || (plateState && !plateState.autoLookup && (plateState.mode !== 'one')) ? 'err' : 'ok';
+    showStatus(els.urlStatus, unmatched || fallback || 'Have a look below — is this right?', unmatched ? 'err' : tone);
+    if (fallback && els.plateStatus) showStatus(els.plateStatus, fallback, '');
     renderConfirm(confirmData, { defaultSource: data.source || 'import', defaultConfidence: data.confidence ?? 0.8 });
   } catch {
-    applySlugFallback(url, "Couldn't reach the lookup service. Paste the listing text or enter the details yourself.");
+    applySlugFallback(url, linkExtractUserMessage({ error: 'network' }));
   } finally {
     els.fetchUrlBtn.disabled = false;
   }
