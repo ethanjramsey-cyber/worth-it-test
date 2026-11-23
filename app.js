@@ -6,6 +6,7 @@ import { rankBestValue, formatBestValueLine, methodText } from './src/bestValue.
 import { parseListingDetails, matchModel, unmatchedModelMessage, normaliseFuel, normaliseGearbox } from './src/parse.js';
 import { extractPlates, plateImportState, normalisePlate, mergePlateLists } from './src/plate.js';
 import { linkExtractUserMessage } from './src/linkImport.js';
+import { createHomeScreen, panelsFor, isInputStep } from './src/homeScreen.js';
 import { parseChallengeParams, buildChallengeUrl, challengeUrlForDisplay } from './src/url.js';
 import { buildConfirmState } from './src/confirm.js';
 import { mergePlateAndListing, motSummaryLine } from './src/vehicleInsights.js';
@@ -83,6 +84,16 @@ const els = {
   plateStatus: $('plate-status'),
   vehicleCard: $('vehicle-card'),
   resultMot: $('result-mot'),
+  homeScreen: $('home-screen'),
+  checkBackWrap: $('check-back-wrap'),
+  checkBack: $('check-back'),
+  textImport: $('text-import'),
+  screenshotImport: $('screenshot-import'),
+  detailsFlow: $('details-flow'),
+  fallbackOptions: $('fallback-options'),
+  fallbackMessage: $('fallback-message'),
+  parseTextBtn: $('parse-text-btn'),
+  enterDetailsBtn: $('enter-details-btn'),
 };
 
 let models = [];
@@ -102,6 +113,9 @@ let lastLookedUpPlate = null;
 let lastConflicts = [];
 let lastConfirmInput = null;
 let workerReachable = null;
+let fallbackOpen = false;
+const checkFlow = createHomeScreen();
+
 let deferredInstall = null;
 const CHECKS_KEY = 'worthit-check-count';
 const INSTALL_DISMISS_KEY = 'worthit-install-dismissed';
@@ -327,6 +341,7 @@ function renderConfirm(input, opts = {}) {
   lastConfirmInput = input;
   renderConfirmMismatch(input);
   highlightFields(state.statuses);
+  showDetails();
   els.confirm.hidden = false;
   els.confirm.scrollIntoView({ behavior: 'smooth', block: 'start' });
   return state;
@@ -444,7 +459,8 @@ function applyParsedText(text) {
   const isLink = /^https?:\/\/\S+$/i.test(trimmed);
   if (isLink && WORKER_URL && extractEndpoint()) {
     if (els.listingUrl) els.listingUrl.value = trimmed;
-    if (els.urlImport) els.urlImport.hidden = false;
+    checkFlow.openOption('link');
+    applyCheckStep({ focus: false });
     fetchListingUrl();
     return;
   }
@@ -667,6 +683,7 @@ function runCheck(input) {
     return;
   }
   setFormError('');
+  showDetails();
   const curve = segmentsById.get(input.model.curveId);
   const result = checkListing({ ...input, now: NOW, curve, index: priceIndex });
   if (!result) {
@@ -824,6 +841,107 @@ els.shareQuestions.addEventListener('click', async () => {
   }
 });
 
+function applyCheckStep({ focus = false } = {}) {
+  const step = checkFlow.getStep();
+  const panels = panelsFor(step, { workerOn: workerReachable === true, fallback: fallbackOpen });
+  if (els.homeScreen) els.homeScreen.hidden = !panels.home;
+  if (els.checkBackWrap) els.checkBackWrap.hidden = !panels.back;
+  if (els.urlImport) els.urlImport.hidden = !panels.link;
+  if (els.plateLookup) els.plateLookup.hidden = !panels.plate;
+  if (els.textImport) els.textImport.hidden = !panels.text;
+  if (els.screenshotImport) els.screenshotImport.hidden = !panels.screenshot;
+  if (els.detailsFlow) els.detailsFlow.hidden = !panels.details;
+  if (els.fallbackOptions) els.fallbackOptions.hidden = !panels.fallback;
+  if (focus) focusCheckStep(step);
+}
+
+function focusCheckStep(step) {
+  const target =
+    step === 'link' ? els.listingUrl
+    : step === 'plate' ? els.vehicleReg
+    : step === 'text' ? els.listingText
+    : step === 'screenshot' ? document.querySelector('#screenshot-import .file-btn')
+    : step === 'home' ? document.querySelector('.home-option')
+    : (els.confirm && !els.confirm.hidden ? els.confirmBtn : els.modelSearch);
+  if (target && typeof target.focus === 'function') {
+    try { target.focus({ preventScroll: true }); } catch { target.focus(); }
+  }
+}
+
+function setFallbackMessage(message) {
+  fallbackOpen = Boolean(message);
+  if (els.fallbackMessage) els.fallbackMessage.textContent = message || '';
+  if (els.fallbackOptions) {
+    const onDetails = checkFlow.getStep() === 'details';
+    els.fallbackOptions.hidden = !(onDetails && fallbackOpen);
+  }
+}
+
+function resetAfterCheck() {
+  lastListingIdentity = { make: null, model: null, year: null };
+  lastQuestions = null;
+  lastListing = null;
+  lastResult = null;
+  lastVehicle = null;
+  lastListingExtract = null;
+  lastImportedPlates = { plates: [], plateStatus: null };
+  lastLookedUpPlate = null;
+  lastConflicts = [];
+  lastConfirmInput = null;
+  setFallbackMessage('');
+  hideConfirm();
+  renderVehicleCard(null);
+  if (els.result) els.result.hidden = true;
+  if (els.listingText) els.listingText.value = '';
+  if (els.listingUrl) els.listingUrl.value = '';
+  if (els.vehicleReg) els.vehicleReg.value = '';
+  if (els.listingScreenshot) els.listingScreenshot.value = '';
+  const nameEl = $('screenshot-filename');
+  if (nameEl) {
+    nameEl.hidden = true;
+    nameEl.textContent = '';
+  }
+  showStatus(els.urlStatus, '', '');
+  showStatus(els.plateStatus, '', '');
+  showStatus($('paste-status'), '', '');
+  showStatus(els.screenshotStatus, '', '');
+  showStatus(els.challengeStatus, '', '');
+  setFormError('');
+  selectModel(null);
+  els.modelSearch.value = '';
+  els.year.value = '';
+  els.mileage.value = '';
+  els.engine.value = '';
+  fuelOptionsFor(null);
+  els.fuel.value = '';
+  els.gearbox.value = '';
+  els.asking.value = '';
+  renderPlateImport({ plates: [], plateStatus: null }, { autoLookup: false });
+}
+
+function showDetails() {
+  checkFlow.showDetails();
+  applyCheckStep({ focus: false });
+}
+
+function openCheckOption(id) {
+  const fromHome = checkFlow.getStep() === 'home';
+  if (fromHome) resetAfterCheck();
+  checkFlow.openOption(id);
+  if (id === 'plate' && fromHome) {
+    const heading = $('plate-lookup-heading');
+    if (heading) heading.textContent = 'Look up a number plate';
+  }
+  applyCheckStep({ focus: true });
+}
+
+function goCheckBack() {
+  const prev = checkFlow.getStep();
+  const next = checkFlow.goBack();
+  if (prev === 'details' && next === 'home') resetAfterCheck();
+  applyCheckStep({ focus: true });
+}
+
 function showTab(name) {
   $('tab-check').hidden = name !== 'check';
   $('tab-best').hidden = name !== 'best';
@@ -834,6 +952,27 @@ function showTab(name) {
 
 document.querySelectorAll('.tabbar .tab').forEach((btn) => {
   btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+
+document.querySelectorAll('[data-home-option]').forEach((btn) => {
+  btn.addEventListener('click', () => openCheckOption(btn.dataset.homeOption));
+});
+document.querySelectorAll('[data-fallback-option]').forEach((btn) => {
+  btn.addEventListener('click', () => openCheckOption(btn.dataset.fallbackOption));
+});
+els.checkBack?.addEventListener('click', () => goCheckBack());
+els.enterDetailsBtn?.addEventListener('click', () => {
+  if (checkFlow.getStep() === 'home') resetAfterCheck();
+  showDetails();
+  focusCheckStep('details');
+});
+els.parseTextBtn?.addEventListener('click', () => {
+  const text = (els.listingText?.value || '').trim();
+  if (!text) {
+    showStatus($('paste-status'), 'Paste the advert text first, or enter the details yourself.', 'err');
+    return;
+  }
+  applyParsedText(els.listingText.value);
 });
 
 /* --- URL import (hidden unless WORKER_URL is set) --- */
@@ -866,9 +1005,7 @@ async function probeWorker() {
 
 function setWorkerFeatures(on) {
   workerReachable = on;
-  if (els.urlImport) els.urlImport.hidden = !on;
-  if (els.screenshotField) els.screenshotField.hidden = !on;
-  if (els.plateLookup) els.plateLookup.hidden = !on;
+  applyCheckStep();
 }
 
 if (WORKER_URL) {
@@ -980,6 +1117,8 @@ function applySlugFallback(url, reasonMessage) {
   if (!found) {
     showStatus(els.urlStatus, reasonMessage, 'err');
     if (els.plateStatus) showStatus(els.plateStatus, reasonMessage, 'err');
+    setFallbackMessage(reasonMessage);
+    showDetails();
     return false;
   }
   fillFormFromParsed(parsed, slug);
@@ -992,6 +1131,7 @@ function applySlugFallback(url, reasonMessage) {
   const msg = `${reasonMessage} We only read the link's own words.${unmatched ? ` ${unmatched}` : ''}`;
   showStatus(els.urlStatus, msg, 'err');
   if (els.plateStatus) showStatus(els.plateStatus, reasonMessage, 'err');
+  setFallbackMessage(reasonMessage);
   return true;
 }
 
@@ -1056,6 +1196,7 @@ async function fetchListingUrl() {
     const tone = unmatched || (plateState && !plateState.autoLookup && (plateState.mode !== 'one')) ? 'err' : 'ok';
     showStatus(els.urlStatus, unmatched || fallback || 'Have a look below — is this right?', unmatched ? 'err' : tone);
     if (fallback && els.plateStatus) showStatus(els.plateStatus, fallback, '');
+    setFallbackMessage(fallback || '');
     renderConfirm(confirmData, { defaultSource: data.source || 'import', defaultConfidence: data.confidence ?? 0.8 });
   } catch {
     applySlugFallback(url, linkExtractUserMessage({ error: 'network' }));
@@ -1208,6 +1349,7 @@ function renderPlateImport(input, { statusEl, autoLookup = true } = {}) {
   }
 
   if (autoLookup && state.autoLookup && state.plates[0] && vehicleEndpoint()) {
+    showDetails();
     lookupPlate({ reg: state.plates[0], auto: true });
   }
   syncLookupPlateButton();
@@ -1562,7 +1704,7 @@ function setupInstallPrompt() {
 }
 
 // Expose a tiny hook used by the screenshot script.
-window.__worthIt = { CONFIG, APP_URL, WORKER_URL, runDemo, showConfirmDemo, runDemoOverpriced, runBestValueDemo, exportCardPngs, showTab };
+window.__worthIt = { CONFIG, APP_URL, WORKER_URL, runDemo, showConfirmDemo, runDemoOverpriced, runBestValueDemo, exportCardPngs, showTab, showDetails, openCheckOption, goCheckBack, applyCheckStep, getCheckStep: () => checkFlow.getStep() };
 function runDemo() {
   const fiesta = models.find((m) => m.id === 'ford-fiesta');
   if (!fiesta) return;

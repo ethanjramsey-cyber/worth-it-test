@@ -751,3 +751,105 @@ a.bookmarklet { text-decoration: none; }
 .mismatch-pick.is-selected {
   outline: 2px solid var(--amber);
 }
+
+/* Home screen: four tappable search options */
+.home-heading {
+  margin: 0 0 12px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.home-options {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+.home-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-height: 72px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.home-option:hover {
+  border-color: rgba(245, 166, 35, 0.45);
+  background: var(--bg-elev-2);
+}
+.home-option-icon {
+  font-size: 1.6rem;
+  line-height: 1.2;
+  width: 2rem;
+  flex-shrink: 0;
+  text-align: center;
+}
+.home-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.home-option-label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+.home-option-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  font-weight: 400;
+}
+.home-manual {
+  margin: 4px 0 8px;
+  text-align: center;
+}
+.text-btn {
+  background: none;
+  border: 0;
+  color: var(--amber-bright);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.check-back-wrap {
+  margin: 0 0 12px;
+}
+.btn.back-btn {
+  width: auto;
+  min-width: 88px;
+  margin: 0;
+  padding: 8px 16px;
+}
+
+#url-import h2,
+#text-import h2,
+#screenshot-import h2,
+.fallback-options h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
+
+.fallback-actions {
+  display: grid;
+  gap: 8px;
+}
+.fallback-options .hint { margin-bottom: 12px; }
+
+.btn:focus-visible,
+.home-option:focus-visible,
+.tab:focus-visible,
+.text-btn:focus-visible,
+.file-btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
