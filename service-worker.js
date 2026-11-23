@@ -1,5 +1,5 @@
 /* Offline cache of the static PWA. No listing pages are stored. */
-const CACHE = 'worth-it-test-v7';
+const CACHE = 'worth-it-test-v8';
 const ASSETS = [
   './',
   './index.html',
