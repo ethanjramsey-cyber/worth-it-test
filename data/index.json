@@ -3,10 +3,10 @@
   "title": "CPIH INDEX 07.1.1B : SECOND-HAND CARS 2015=100",
   "sourceUrl": "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/l545/mm23/data",
   "sourcePage": "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/l545/mm23",
-  "retrieved": "2026-11-10",
+  "retrieved": "2026-11-18",
   "baseMonth": "1988-01",
-  "latestMonth": "2026-09",
-  "latestValue": 109,
+  "latestMonth": "2026-10",
+  "latestValue": 108.2,
   "values": {
     "1988-01": 126.8,
     "1988-02": 126.4,
@@ -472,6 +472,7 @@
     "2026-06": 110.7,
     "2026-07": 109.9,
     "2026-08": 109.4,
-    "2026-09": 109
+    "2026-09": 109,
+    "2026-10": 108.2
   }
 }
